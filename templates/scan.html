@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid px-3 px-md-4">
+    <h2 class="mb-4">File Scanner</h2>
+    
+    <!-- Scanner Status -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Scanner Status</h5>
+            <div id="scanner-status" class="d-flex align-items-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <span class="ms-2">Checking scanner status...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- File Upload Form -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Scan File</h5>
+            <form id="scan-form" action="{{ url_for('scan_file') }}" method="post" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label for="file" class="form-label">Select file to scan</label>
+                    <input type="file" class="form-control" id="file" name="file" required>
+                    <div class="form-text">Maximum file size: 100MB</div>
+                </div>
+                <button type="submit" class="btn btn-primary w-100 w-md-auto" id="scan-button" disabled>
+                    <i class="fas fa-search"></i> Scan File
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Scan Results -->
+    <div class="card">
+        <div class="card-header bg-dark text-light fw-bold d-flex justify-content-between align-items-center">
+            <span>Scan Results</span>
+            <button class="btn btn-sm btn-outline-light" onclick="clearResults()">
+                <i class="fas fa-trash"></i> Clear
+            </button>
+        </div>
+        <div id="scan-results" class="bg-black text-light p-3" style="font-family: 'Fira Mono', 'Consolas', monospace; min-height: 200px; max-height: 400px; overflow-y: auto; border-radius: 0 0 0.5rem 0.5rem;">
+            <div class="text-muted">No scan results yet...</div>
+            <span class="terminal-cursor">█</span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const scanForm = document.getElementById('scan-form');
+    const scanButton = document.getElementById('scan-button');
+    const scanResults = document.getElementById('scan-results');
+    const scannerStatus = document.getElementById('scanner-status');
+
+    function checkScannerStatus() {
+        fetch('/scan/status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'online') {
+                    scannerStatus.innerHTML = `
+                        <i class="fas fa-check-circle text-success"></i>
+                        <span class="ms-2">Scanner is online</span>
+                    `;
+                    scanButton.disabled = false;
+                } else {
+                    scannerStatus.innerHTML = `
+                        <i class="fas fa-times-circle text-danger"></i>
+                        <span class="ms-2">Scanner is offline</span>
+                    `;
+                    scanButton.disabled = true;
+                }
+            })
+            .catch(error => {
+                scannerStatus.innerHTML = `
+                    <i class="fas fa-times-circle text-danger"></i>
+                    <span class="ms-2">Error checking scanner status</span>
+                `;
+                scanButton.disabled = true;
+            });
+    }
+
+    function clearResults() {
+        scanResults.innerHTML = `
+            <div class="text-muted">No scan results yet...</div>
+            <span class="terminal-cursor">█</span>
+        `;
+    }
+
+    scanForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(this);
+        const file = formData.get('file');
+        
+        if (!file) {
+            addScanResult('error', 'No file selected');
+            return;
+        }
+        
+        // Add initial scan message
+        addScanResult('info', `Scanning file: ${file.name}`);
+        
+        fetch('/scan', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                addScanResult('success', data.message);
+            } else {
+                addScanResult('error', data.message);
+            }
+        })
+        .catch(error => {
+            addScanResult('error', 'Error scanning file: ' + error.message);
+        });
+    });
+
+    function addScanResult(type, message) {
+        const now = new Date();
+        const timestamp = now.toISOString().replace('Z', '');
+        const line = document.createElement('div');
+        line.className = `log-line log-${type}`;
+        line.innerHTML = `${timestamp}\t<span class="log-type">${type.toUpperCase()}</span>\t${message}`;
+        
+        const cursor = scanResults.querySelector('.terminal-cursor');
+        scanResults.insertBefore(line, cursor);
+        scanResults.scrollTop = scanResults.scrollHeight;
+    }
+
+    // Check status immediately and then every 30 seconds
+    checkScannerStatus();
+    setInterval(checkScannerStatus, 30000);
+});
+</script>
+
+<style>
+#scan-results { 
+    background: #181818; 
+    color: #e0e0e0;
+    font-size: 0.9rem;
+}
+.log-line { 
+    white-space: pre;
+    word-break: break-all;
+}
+.log-success { color: #50fa7b; }
+.log-error { color: #ff5555; }
+.log-info { color: #00bfff; }
+.terminal-cursor { 
+    color: #50fa7b; 
+    animation: blink 1s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+@media (max-width: 768px) {
+    .container-fluid {
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+    #scan-results {
+        font-size: 0.8rem;
+    }
+    .log-line {
+        white-space: normal;
+    }
+}
+</style>
+{% endblock %} 

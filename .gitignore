@@ -1,0 +1,30 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environment
+venv/
+
+# Logs
+logs/
+*.log
+
+# System files
+.DS_Store
+
+# Archives
+*.zip
+*.tar.gz
+
+# Sensitive data
+sensitive_data/
+quarantine/
+scan_temp/
+keys/
+credentials.yaml
+users.yaml
+
+# Model files (if large or sensitive)
+models/
+models2/ 

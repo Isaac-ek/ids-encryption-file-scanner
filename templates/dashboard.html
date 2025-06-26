@@ -1,0 +1,372 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Network Security Dashboard{% endblock %}
+
+{% block content %}
+<style>
+    .override {
+        color: #000 !important;
+    }
+</style>
+<div class="container-fluid">
+    <!-- Welcome Message -->
+    <div class="row mb-4">
+        <div class="col">
+            <h2 class="mb-0">Welcome to NetSecure</h2>
+            <p class="text-muted">Real-time network security monitoring and threat detection</p>
+        </div>
+</div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title">Total Alerts</h5>
+                    <h2 class="mb-0">{{ total_alerts }}</h2>
+      </div>
+    </div>
+  </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title">Alert Types</h5>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for type, count in type_counts.items() %}
+                        <span class="badge bg-primary">{{ type }}: {{ count }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title">Filter by Type</h5>
+                    <select class="form-select" id="alertTypeFilter">
+                        <option value="">All Types</option>
+                        {% for type in unique_types %}
+                        <option value="{{ type }}">{{ type }}</option>
+            {% endfor %}
+          </select>
+      </div>
+    </div>
+  </div>
+</div>
+
+    <!-- Attack Alerts -->
+    <div class="card mt-4">
+        <div class="card-header bg-info text-light fw-bold">
+            <span>Model Performance</span>
+        </div>
+        <div class="card-body">
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item">Accuracy: {{ model_accuracy }}%</li>
+                <li class="list-group-item">Precision: {{ model_precision }}%</li>
+                <li class="list-group-item">Recall: {{ model_recall }}%</li>
+                <li class="list-group-item">F1 Score: {{ model_f1 }}%</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Threat Alerts -->
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Threat Alerts</h5>
+                    <div class="d-flex gap-2">
+                        <input type="text" class="form-control" id="searchAlerts" placeholder="Search alerts...">
+                        <button class="btn btn-primary" id="refreshAlerts">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+          <th>Type</th>
+          <th>Source IP</th>
+          <th>Destination IP</th>
+                                    
+        </tr>
+      </thead>
+                            <tbody id="alertsTableBody">
+        {% for alert in alerts %}
+        <tr>
+                                    <td>{{ alert.timestamp }}</td>
+                                    <td><span class="badge bg-{{ alert.alert_type|lower }} override">{{ alert.alert_type }}</span></td>
+                                    <td>{{ alert.source_ip }}</td>
+                                    <td>{{ alert.destination_ip }}</td>
+                                    
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="d-flex justify-content-between align-items-center mt-2">
+    <div>
+      Showing <b>{{ (page-1)*per_page+1 }}</b> - <b>{{ (page-1)*per_page+alerts|length }}</b> of <b>{{ total_entries }}</b> entries
+    </div>
+    <nav class="d-flex align-items-center gap-2">
+      <ul class="pagination mb-0">
+        <li class="page-item {% if page == 1 %}disabled{% endif %}">
+          <a class="page-link" href="?page={{ page-1 }}&per_page={{ per_page }}">Previous</a>
+        </li>
+      </ul>
+      <form method="get" class="d-inline-flex align-items-center gap-2 mb-0">
+        <input type="hidden" name="per_page" value="{{ per_page }}">
+        <label for="page_select" class="form-label mb-0">Page:</label>
+        <select name="page" id="page_select" class="form-select form-select-sm" onchange="this.form.submit()">
+          {% for p in range(1, total_pages+1) %}
+          <option value="{{ p }}" {% if page == p %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+        <span class="ms-1">/ {{ total_pages }}</span>
+        {% for key, value in request.args.items() if key not in ['page', 'per_page'] %}
+        <input type="hidden" name="{{ key }}" value="{{ value }}">
+        {% endfor %}
+      </form>
+      <ul class="pagination mb-0">
+        <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+          <a class="page-link" href="?page={{ page+1 }}&per_page={{ per_page }}">Next</a>
+        </li>
+      </ul>
+    </nav>
+  </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Alert Distribution</h5>
+                </div>
+                <div class="card-body" style="height: 400px;">
+                    <canvas id="alertTypeChart"></canvas>
+                </div>
+            </div>
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Live Log</h5>
+                </div>
+                <div class="card-body">
+                    <div class="terminal-log" id="terminalLog" style="max-height: 300px; overflow-y: auto;">
+                        <div class="terminal-cursor">_</div>
+                    </div>
+                </div>
+            </div>
+      </div>
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="alertToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header">
+            <i class="fas fa-bell me-2"></i>
+            <strong class="me-auto">New Alert</strong>
+            <small>Just now</small>
+            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize Socket.IO connection
+        const socket = io();
+        const attackAlerts = document.getElementById('attack-alerts');
+
+        // Toast function
+        function showAlertToast(message) {
+            const toastBody = document.querySelector('#alertToast .toast-body');
+            toastBody.textContent = message;
+            const toastElement = document.getElementById('alertToast');
+            const toast = new bootstrap.Toast(toastElement);
+            toast.show();
+        }
+
+        // Chart configuration
+        const ctx = document.getElementById('alertTypeChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: {{ alert_types|tojson }},
+                datasets: [{
+                    label: 'Number of Alerts',
+                    data: {{ alert_counts|tojson }},
+                    backgroundColor: [
+                        'rgba(255, 99, 132, 0.8)',
+                        'rgba(54, 162, 235, 0.8)',
+                        'rgba(255, 206, 86, 0.8)',
+                        'rgba(75, 192, 192, 0.8)',
+                        'rgba(153, 102, 255, 0.8)'
+                    ],
+                    borderColor: [
+                        'rgba(255, 99, 132, 1)',
+                        'rgba(54, 162, 235, 1)',
+                        'rgba(255, 206, 86, 1)',
+                        'rgba(75, 192, 192, 1)',
+                        'rgba(153, 102, 255, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1,
+                            font: {
+                                size: 12
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Number of Alerts',
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            font: {
+                                size: 12
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Alert Types',
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return 'Alerts: ' + context.raw;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Function to add attack alert to the log
+        function addAttackAlert(message) {
+            const now = new Date();
+            const timestamp = now.toISOString().replace('T', ' ').replace('Z', '');
+            const line = document.createElement('div');
+            line.className = 'log-line log-error';
+            line.innerHTML = `${timestamp}\t${message}`;
+            // Remove placeholder if present
+            const placeholder = attackAlerts.querySelector('.text-muted');
+            if (placeholder) placeholder.remove();
+            const cursor = attackAlerts.querySelector('.terminal-cursor');
+            attackAlerts.insertBefore(line, cursor);
+            attackAlerts.scrollTop = attackAlerts.scrollHeight;
+        }
+
+        // Expose addAttackAlert globally for debugging
+        window.addAttackAlert = addAttackAlert;
+
+        // Listen for real attack alerts from the backend
+        socket.on('attack_alert', function(data) {
+            console.log('Received attack_alert:', data); // Debug log
+            if (data && data.message) {
+                addAttackAlert(data.message);
+                showAlertToast(data.message);
+            }
+        });
+
+        // Listen for AES encryption completion messages
+        socket.on('aes_encryption', function(data) {
+            console.log('Received aes_encryption:', data); // Debug log
+            if (data && data.message) {
+                addAttackAlert(data.message);
+                showAlertToast(data.message);
+            }
+        });
+
+        // Add initial message
+        addAttackAlert('System initialized and monitoring for attacks...');
+
+        // Search functionality
+        document.getElementById('searchAlerts').addEventListener('input', function(e) {
+            const searchText = e.target.value.toLowerCase();
+            const rows = document.getElementById('alertsTableBody').getElementsByTagName('tr'); 
+            Array.from(rows).forEach(row => {
+                const text = row.textContent.toLowerCase();
+                row.style.display = text.includes(searchText) ? '' : 'none';
+            });
+        });
+
+        // Refresh button
+        document.getElementById('refreshAlerts').addEventListener('click', function() {
+            window.location.reload();
+        });
+
+        // Alert type filter
+        document.getElementById('alertTypeFilter').addEventListener('change', function(e) {
+            const selectedType = e.target.value;
+            const rows = document.getElementById('alertsTableBody').getElementsByTagName('tr');
+
+            Array.from(rows).forEach(row => {
+                const type = row.querySelector('.badge').textContent;
+                row.style.display = !selectedType || type === selectedType ? '' : 'none';
+    });
+  });
+
+const terminalLog = document.getElementById('terminalLog');
+function addLogLine(message, type) {
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  if (type === 'info') {
+    line.classList.add('log-info');
+    line.style.color = '#28a745';
+  } else if (type === 'detected') {
+    line.classList.add('log-detected');
+    line.style.color = '#ff9800';
+  }
+  line.textContent = message;
+  const cursor = terminalLog.querySelector('.terminal-cursor');
+  terminalLog.insertBefore(line, cursor);
+  terminalLog.scrollTop = terminalLog.scrollHeight;
+}
+// Fetch initial alerts
+fetch('/dashboard/info_alerts').then(r => r.json()).then(data => {
+  (data.info_alerts || []).reverse().forEach(msg => addLogLine(msg, 'info'));
+  (data.detected_alerts || []).reverse().forEach(msg => addLogLine(msg, 'detected'));
+});
+// Listen for real-time info_alert and detected_alert events
+if (window.socket) {
+  socket.on('info_alert', function(data) {
+    if (data && data.message) addLogLine(data.message, 'info');
+  });
+  socket.on('detected_alert', function(data) {
+    if (data && data.message) addLogLine(data.message, 'detected');
+  });
+}
+    });
+</script>
+{% endblock %}

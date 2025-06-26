@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% block title %}Threat Logs - Admin{% endblock %}
+{% block content %}
+<h2>Threat Logs</h2>
+<hr>
+<div class="mb-3">
+  <form class="row row-cols-lg-auto g-2 align-items-center" method="get">
+    <div class="col-12">
+      <input type="date" name="date" value="{{ request.args.date or '' }}" class="form-control" placeholder="Date">
+    </div>
+    <div class="col-12">
+      <select name="alert_type" class="form-select">
+        <option value="">All Types</option>
+        {% for t in unique_types %}
+        <option value="{{ t }}" {% if request.args.alert_type == t %}selected{% endif %}>{{ t }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12">
+      <input type="text" name="src" value="{{ request.args.src or '' }}" class="form-control" placeholder="Source IP">
+    </div>
+    <div class="col-12">
+      <input type="text" name="dst" value="{{ request.args.dst or '' }}" class="form-control" placeholder="Destination IP">
+    </div>
+    <div class="col-12">
+      <button type="submit" class="btn btn-primary">Filter</button>
+      <a href="{{ url_for('threat_logs') }}" class="btn btn-secondary">Reset</a>
+    </div>
+    <div class="col-12">
+      <a href="{{ export_csv_url }}" class="btn btn-outline-success">Export CSV</a>
+      <a href="{{ export_json_url }}" class="btn btn-outline-info">Export JSON</a>
+    </div>
+  </form>
+</div>
+<div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+    <table class="table table-hover" id="logsTable">
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Type</th>
+                <th>Source IP</th>
+                <th>Destination IP</th>
+                <!-- Add other columns as needed -->
+            </tr>
+        </thead>
+        <tbody id="logsTableBody">
+            {% for log in logs %}
+            <tr>
+                <td>{{ log.timestamp }}</td>
+                <td>{{ log.alert_type }}</td>
+                <td>{{ log.source_ip }}</td>
+                <td>{{ log.destination_ip }}</td>
+                <!-- Add other columns as needed -->
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<div class="d-flex justify-content-between align-items-center mt-2">
+  <div>
+    Showing <b>{{ (page-1)*per_page+1 }}</b> - <b>{{ (page-1)*per_page+logs|length }}</b> of <b>{{ total_entries }}</b> entries
+  </div>
+  <nav class="d-flex align-items-center gap-2">
+    <ul class="pagination mb-0">
+      <li class="page-item {% if page == 1 %}disabled{% endif %}">
+        <a class="page-link" href="?page={{ page-1 }}&per_page={{ per_page }}{% if request.args.date %}&date={{ request.args.date }}{% endif %}{% if request.args.alert_type %}&alert_type={{ request.args.alert_type }}{% endif %}{% if request.args.src %}&src={{ request.args.src }}{% endif %}{% if request.args.dst %}&dst={{ request.args.dst }}{% endif %}">Previous</a>
+      </li>
+    </ul>
+    <form method="get" class="d-inline-flex align-items-center gap-2 mb-0">
+      <input type="hidden" name="per_page" value="{{ per_page }}">
+      <label for="page_select" class="form-label mb-0">Page:</label>
+      <select name="page" id="page_select" class="form-select form-select-sm" onchange="this.form.submit()">
+        {% for p in range(1, total_pages+1) %}
+        <option value="{{ p }}" {% if page == p %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+      <span class="ms-1">/ {{ total_pages }}</span>
+      {% for key, value in request.args.items() if key not in ['page', 'per_page'] %}
+      <input type="hidden" name="{{ key }}" value="{{ value }}">
+      {% endfor %}
+    </form>
+    <ul class="pagination mb-0">
+      <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+        <a class="page-link" href="?page={{ page+1 }}&per_page={{ per_page }}{% if request.args.date %}&date={{ request.args.date }}{% endif %}{% if request.args.alert_type %}&alert_type={{ request.args.alert_type }}{% endif %}{% if request.args.src %}&src={{ request.args.src }}{% endif %}{% if request.args.dst %}&dst={{ request.args.dst }}{% endif %}">Next</a>
+      </li>
+    </ul>
+  </nav>
+</div>
+<a href="{{ url_for('admin') }}" class="btn btn-secondary mt-3">Back to Admin Panel</a>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentPage = {{ page }};
+const totalPages = {{ total_pages }};
+const perPage = {{ per_page }};
+const logsTableBody = document.getElementById('logsTableBody');
+const tableContainer = document.querySelector('.table-responsive');
+let loading = false;
+
+function loadMoreLogs() {
+    if (loading || currentPage >= totalPages) return;
+    loading = true;
+    fetch(`?page=${currentPage + 1}&per_page=${perPage}`)
+        .then(response => response.text())
+        .then(html => {
+            // Parse the returned HTML and extract new rows
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const newRows = doc.querySelectorAll('#logsTableBody tr');
+            newRows.forEach(row => logsTableBody.appendChild(row));
+            currentPage++;
+            loading = false;
+        });
+}
+
+tableContainer.addEventListener('scroll', function() {
+    if (tableContainer.scrollTop + tableContainer.clientHeight >= tableContainer.scrollHeight - 10) {
+        loadMoreLogs();
+    }
+});
+</script>
+{% endblock %} 

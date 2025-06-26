@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block title %}Admin - Network Security Dashboard{% endblock %}
+{% block content %}
+<h2>Admin Panel</h2>
+<hr>
+<form action="{{ url_for('admin_upload') }}" method="post" enctype="multipart/form-data" class="mb-4">
+  <div class="input-group">
+    <input type="file" name="file" multiple class="form-control" required>
+    <button type="submit" class="btn btn-primary">Add to Sensitive Data</button>
+  </div>
+  <div class="form-text">Upload files to protect them in the sensitive_data directory.</div>
+</form>
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+{% if last_intrusion %}
+  <div class="alert alert-danger">Last intrusion detected at: <b>{{ last_intrusion }}</b>. Sensitive data was encrypted and isolated.</div>
+{% endif %}
+{% if restore_msg %}
+  <div class="alert alert-info">{{ restore_msg }}</div>
+{% endif %}
+<h4>Restore/Decrypt Quarantined Files</h4>
+{% if encrypted_files and encrypted_files|length > 0 %}
+  <form method="post">
+    <div class="table-responsive">
+      <table class="table table-bordered">
+        <thead class="table-light">
+          <tr>
+            <th>Select</th>
+            <th>Original Path</th>
+            <th>Encrypted File</th>
+            <th>Timestamp</th>
+            <th>Download</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in encrypted_files %}
+          <tr>
+            <td><input type="checkbox" name="restore" value="{{ entry.encrypted }}"></td>
+            <td style="font-size:small">{{ entry.original }}</td>
+            <td style="font-size:small">{{ entry.encrypted }}</td>
+            <td>{{ entry.timestamp }}</td>
+            <td>
+              <a href="{{ url_for('admin_download') }}?enc_path={{ entry.encrypted | urlencode }}" class="btn btn-sm btn-primary">Download</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button type="submit" class="btn btn-success">Restore Selected Files</button>
+  </form>
+{% else %}
+  <div class="alert alert-secondary">No quarantined files found.</div>
+{% endif %}
+{% endblock %} 

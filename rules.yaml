@@ -1,0 +1,16 @@
+rules:
+  - name: Block Suspicious IP
+    type: ip
+    value: 192.168.1.100
+    threshold: null
+    enabled: true
+  - name: Block Port 23
+    type: port
+    value: 23
+    threshold: null
+    enabled: true
+  - name: High Bandwidth Alert
+    type: bandwidth
+    value: any
+    threshold: 1000000
+    enabled: true 

@@ -1,0 +1,211 @@
+{% extends 'base.html' %}
+{% block title %}Encrypt/Decrypt - Network Security Dashboard{% endblock %}
+{% block content %}
+<h2>File Encryption/Decryption</h2>
+<hr>
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+<div class="row g-4 mb-4">
+  <div class="col-md-6 col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Encrypt a File</h5>
+        <form action="{{ url_for('encrypt_file_route') }}" method="post" enctype="multipart/form-data">
+          <div class="input-group mb-2">
+            <input type="file" name="file" class="form-control" required>
+            <button type="submit" class="btn btn-primary">Encrypt</button>
+          </div>
+          <div class="form-text">File will be stored in sensitive_data and encrypted to quarantine.</div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6 col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Decrypt an Encrypted File</h5>
+        <form action="{{ url_for('decrypt_file_route') }}" method="post" enctype="multipart/form-data">
+          <div class="input-group mb-2">
+            <input type="file" name="file" class="form-control" required>
+            <button type="submit" class="btn btn-success">Decrypt &amp; Download</button>
+          </div>
+          <div class="form-text">Upload a .enc file from quarantine to decrypt and download.</div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="row g-4">
+  <div class="col-md-6 col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Sensitive Data Files</h5>
+        {% if sensitive_files and sensitive_files|length > 0 %}
+          <form id="bulk-encrypt-form" method="post" action="{{ url_for('bulk_encrypt') }}">
+            <div class="mb-2">
+              <input type="checkbox" id="select-all-sensitive"> <label for="select-all-sensitive">Select All</label>
+            </div>
+            <ul class="list-group">
+              {% for f in sensitive_files %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                  <div>
+                    <input type="checkbox" name="files" value="{{ f }}" class="sensitive-checkbox me-2">
+                    <span class="file-preview" data-filename="{{ f }}" style="cursor:pointer;">{{ f }}</span>
+                  </div>
+                  <a href="{{ url_for('download_file', type='sensitive', filename=f) }}" class="btn btn-sm btn-outline-primary">Download</a>
+                </li>
+              {% endfor %}
+            </ul>
+            <button type="submit" class="btn btn-primary mt-2">Bulk Encrypt Selected</button>
+            <div class="progress mt-2" style="height: 20px; display:none;">
+              <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">0%</div>
+            </div>
+          </form>
+        {% else %}
+          <div class="alert alert-secondary mt-2">No sensitive files found.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6 col-12">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Encrypted Files (Quarantine)</h5>
+        {% if encrypted_files and encrypted_files|length > 0 %}
+          <form id="bulk-decrypt-form" method="post" action="{{ url_for('bulk_decrypt') }}">
+            <div class="mb-2">
+              <input type="checkbox" id="select-all-encrypted"> <label for="select-all-encrypted">Select All</label>
+            </div>
+            <ul class="list-group">
+              {% for f in encrypted_files %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                  <div>
+                    <input type="checkbox" name="files" value="{{ f }}" class="encrypted-checkbox me-2">
+                    <span class="file-preview" data-filename="{{ f }}" style="cursor:pointer;">{{ f }}</span>
+                  </div>
+                  <a href="{{ url_for('download_file', type='encrypted', filename=f) }}" class="btn btn-sm btn-outline-success">Download</a>
+                </li>
+              {% endfor %}
+            </ul>
+            <button type="submit" class="btn btn-success mt-2">Bulk Decrypt Selected</button>
+            <div class="progress mt-2" style="height: 20px; display:none;">
+              <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%">0%</div>
+            </div>
+          </form>
+        {% else %}
+          <div class="alert alert-secondary mt-2">No encrypted files found.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+<!-- Modal for file preview -->
+<div class="modal fade" id="filePreviewModal" tabindex="-1" aria-labelledby="filePreviewModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="filePreviewModalLabel">File Preview</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="filePreviewContent">
+        Loading...
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+// Select All checkboxes
+const selectAllSensitive = document.getElementById('select-all-sensitive');
+if (selectAllSensitive) {
+  selectAllSensitive.addEventListener('change', function() {
+    document.querySelectorAll('.sensitive-checkbox').forEach(cb => cb.checked = this.checked);
+  });
+}
+const selectAllEncrypted = document.getElementById('select-all-encrypted');
+if (selectAllEncrypted) {
+  selectAllEncrypted.addEventListener('change', function() {
+    document.querySelectorAll('.encrypted-checkbox').forEach(cb => cb.checked = this.checked);
+  });
+}
+
+// AJAX bulk encrypt
+const bulkEncryptForm = document.getElementById('bulk-encrypt-form');
+if (bulkEncryptForm) {
+  bulkEncryptForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    const checkboxes = document.querySelectorAll('.sensitive-checkbox:checked');
+    if (checkboxes.length === 0) return;
+    const files = Array.from(checkboxes).map(cb => cb.value);
+    const progressBar = bulkEncryptForm.querySelector('.progress');
+    const bar = progressBar.querySelector('.progress-bar');
+    progressBar.style.display = '';
+    bar.style.width = '0%';
+    bar.textContent = '0%';
+    let completed = 0;
+    function updateBar() {
+      completed++;
+      const percent = Math.round((completed / files.length) * 100);
+      bar.style.width = percent + '%';
+      bar.textContent = percent + '%';
+    }
+    // Process files one by one via AJAX
+    (async function processFiles() {
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('files', file);
+        await fetch(bulkEncryptForm.action, {
+          method: 'POST',
+          body: formData,
+          credentials: 'same-origin'
+        });
+        updateBar();
+      }
+      setTimeout(() => { progressBar.style.display = 'none'; location.reload(); }, 800);
+    })();
+  });
+}
+// AJAX bulk decrypt
+const bulkDecryptForm = document.getElementById('bulk-decrypt-form');
+if (bulkDecryptForm) {
+  bulkDecryptForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    const checkboxes = document.querySelectorAll('.encrypted-checkbox:checked');
+    if (checkboxes.length === 0) return;
+    const files = Array.from(checkboxes).map(cb => cb.value);
+    const progressBar = bulkDecryptForm.querySelector('.progress');
+    const bar = progressBar.querySelector('.progress-bar');
+    progressBar.style.display = '';
+    bar.style.width = '0%';
+    bar.textContent = '0%';
+    let completed = 0;
+    function updateBar() {
+      completed++;
+      const percent = Math.round((completed / files.length) * 100);
+      bar.style.width = percent + '%';
+      bar.textContent = percent + '%';
+    }
+    (async function processFiles() {
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('files', file);
+        await fetch(bulkDecryptForm.action, {
+          method: 'POST',
+          body: formData,
+          credentials: 'same-origin'
+        });
+        updateBar();
+      }
+      setTimeout(() => { progressBar.style.display = 'none'; location.reload(); }, 800);
+    })();
+  });
+}
+// TODO: Add file preview logic (fetch and display file content in modal)
+</script>
+{% endblock %}

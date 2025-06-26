@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+{% block title %}Audit Log - Admin{% endblock %}
+{% block content %}
+<h2>Audit Log</h2>
+<hr>
+<div class="mb-3">
+  <form class="row row-cols-lg-auto g-2 align-items-center" method="get">
+    <div class="col-12">
+      <input type="text" name="admin" value="{{ request.args.admin or '' }}" class="form-control" placeholder="Admin username">
+    </div>
+    <div class="col-12">
+      <input type="text" name="target_user" value="{{ request.args.target_user or '' }}" class="form-control" placeholder="Target user">
+    </div>
+    <div class="col-12">
+      <select name="action" class="form-select">
+        <option value="">All Actions</option>
+        {% for a in all_entries|map(attribute='action')|unique %}
+        <option value="{{ a }}" {% if request.args.action == a %}selected{% endif %}>{{ a|capitalize }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12">
+      <button type="submit" class="btn btn-primary">Filter</button>
+      <a href="{{ url_for('audit_log') }}" class="btn btn-secondary">Reset</a>
+    </div>
+    <div class="col-12">
+      <a href="{{ export_csv_url }}" class="btn btn-outline-success">Export CSV</a>
+      <a href="{{ export_json_url }}" class="btn btn-outline-info">Export JSON</a>
+    </div>
+  </form>
+</div>
+{% if is_valid %}
+  <div class="alert alert-success">Audit log is <b>intact</b> (no tampering detected).</div>
+{% else %}
+  <div class="alert alert-danger">Audit log <b>tampering detected</b> at entry #{{ tamper_index+1 }}!</div>
+{% endif %}
+<div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+  <table class="table table-bordered table-hover table-sm align-middle" id="auditLogTable">
+    <thead class="table-light">
+      <tr>
+        <th>#</th>
+        <th>Timestamp</th>
+        <th>Admin</th>
+        <th>Action</th>
+        <th>Target User</th>
+        <th>Details</th>
+        <th>Entry Hash</th>
+        <th>Prev Hash</th>
+      </tr>
+    </thead>
+    <tbody id="auditLogTableBody">
+      {% for e in entries %}
+      <tr {% if not is_valid and (tamper_index is not none) and (loop.index0 + (page-1)*per_page == tamper_index) %}class="table-danger"{% endif %}>
+        <td>{{ loop.index + (page-1)*per_page }}</td>
+        <td><span style="font-size:small">{{ e.timestamp }}</span></td>
+        <td>{{ e.admin }}</td>
+        <td>{{ e.action }}</td>
+        <td>{{ e.target_user }}</td>
+        <td><pre style="font-size:small; margin:0">{{ e.details | tojson(indent=2) }}</pre></td>
+        <td style="font-size:x-small">{{ e.entry_hash }}</td>
+        <td style="font-size:x-small">{{ e.prev_hash }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="d-flex justify-content-between align-items-center mt-2">
+  <div>
+    Showing <b>{{ (page-1)*per_page+1 }}</b> - <b>{{ (page-1)*per_page+entries|length }}</b> of <b>{{ total_entries }}</b> entries
+  </div>
+  <nav>
+    <ul class="pagination mb-0">
+      <li class="page-item {% if page == 1 %}disabled{% endif %}">
+        <a class="page-link" href="?page={{ page-1 }}&per_page={{ per_page }}">Previous</a>
+      </li>
+      {% for p in range(1, total_pages+1) %}
+      <li class="page-item {% if page == p %}active{% endif %}"><a class="page-link" href="?page={{ p }}&per_page={{ per_page }}">{{ p }}</a></li>
+      {% endfor %}
+      <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+        <a class="page-link" href="?page={{ page+1 }}&per_page={{ per_page }}">Next</a>
+      </li>
+    </ul>
+  </nav>
+</div>
+<a href="{{ url_for('admin') }}" class="btn btn-secondary mt-3">Back to Admin Panel</a>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentPage = {{ page }};
+const totalPages = {{ total_pages }};
+const perPage = {{ per_page }};
+const auditLogTableBody = document.getElementById('auditLogTableBody');
+const tableContainer = document.querySelector('.table-responsive');
+let loading = false;
+
+function loadMoreAuditLogs() {
+    if (loading || currentPage >= totalPages) return;
+    loading = true;
+    fetch(`?page=${currentPage + 1}&per_page=${perPage}`)
+        .then(response => response.text())
+        .then(html => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const newRows = doc.querySelectorAll('#auditLogTableBody tr');
+            newRows.forEach(row => auditLogTableBody.appendChild(row));
+            currentPage++;
+            loading = false;
+        });
+}
+
+tableContainer.addEventListener('scroll', function() {
+    if (tableContainer.scrollTop + tableContainer.clientHeight >= tableContainer.scrollHeight - 10) {
+        loadMoreAuditLogs();
+    }
+});
+</script>
+{% endblock %} 

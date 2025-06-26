@@ -1,0 +1,90 @@
+{% extends 'base.html' %}
+{% block title %}Security Rules - Admin{% endblock %}
+{% block content %}
+<h2>Custom Security Rules</h2>
+<hr>
+{% if msg %}
+  <div class="alert alert-info">{{ msg }}</div>
+{% endif %}
+<div class="row">
+  <div class="col-md-7">
+    <h4>All Rules</h4>
+    <div class="table-responsive">
+      <table class="table table-bordered table-hover">
+        <thead class="table-light">
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Value</th>
+            <th>Threshold</th>
+            <th>Enabled</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rules %}
+          <tr>
+            <form method="post">
+              <input type="hidden" name="action" value="edit">
+              <input type="hidden" name="index" value="{{ loop.index0 }}">
+              <td><input type="text" name="name" value="{{ r.name }}" class="form-control form-control-sm" required></td>
+              <td>
+                <select name="type" class="form-select form-select-sm">
+                  <option value="ip" {% if r.type == 'ip' %}selected{% endif %}>IP</option>
+                  <option value="port" {% if r.type == 'port' %}selected{% endif %}>Port</option>
+                  <option value="bandwidth" {% if r.type == 'bandwidth' %}selected{% endif %}>Bandwidth</option>
+                  <option value="heuristic" {% if r.type == 'heuristic' %}selected{% endif %}>Heuristic</option>
+                </select>
+              </td>
+              <td><input type="text" name="value" value="{{ r.value }}" class="form-control form-control-sm"></td>
+              <td><input type="text" name="threshold" value="{{ r.threshold or '' }}" class="form-control form-control-sm"></td>
+              <td><input type="checkbox" name="enabled" {% if r.enabled %}checked{% endif %}></td>
+              <td>
+                <button type="submit" class="btn btn-sm btn-primary">Save</button>
+            </form>
+            <form method="post" style="display:inline">
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="index" value="{{ loop.index0 }}">
+              <button type="submit" class="btn btn-sm btn-danger ms-1" onclick="return confirm('Delete rule {{ r.name }}?')">Delete</button>
+            </form>
+              </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="col-md-5">
+    <h4>Add New Rule</h4>
+    <form method="post">
+      <input type="hidden" name="action" value="add">
+      <div class="mb-2">
+        <label>Name</label>
+        <input type="text" name="name" class="form-control" required>
+      </div>
+      <div class="mb-2">
+        <label>Type</label>
+        <select name="type" class="form-select">
+          <option value="ip">IP</option>
+          <option value="port">Port</option>
+          <option value="bandwidth">Bandwidth</option>
+          <option value="heuristic">Heuristic</option>
+        </select>
+      </div>
+      <div class="mb-2">
+        <label>Value</label>
+        <input type="text" name="value" class="form-control">
+      </div>
+      <div class="mb-2">
+        <label>Threshold</label>
+        <input type="text" name="threshold" class="form-control">
+      </div>
+      <div class="mb-2">
+        <label><input type="checkbox" name="enabled" checked> Enabled</label>
+      </div>
+      <button type="submit" class="btn btn-success">Add Rule</button>
+    </form>
+  </div>
+</div>
+<a href="{{ url_for('admin') }}" class="btn btn-secondary mt-3">Back to Admin Panel</a>
+{% endblock %} 
