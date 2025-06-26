@@ -32,4 +32,4 @@ Open your browser and go to [http://localhost:5000](http://localhost:5000)
 - **admin** / adminpass
 - **user** / userpass
 
-> For production, use a database and secure password management. 
+> For production, use a database and secure password management. # ids-encryption-file-scanner
