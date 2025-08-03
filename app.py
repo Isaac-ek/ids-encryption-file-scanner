@@ -1028,4 +1028,4 @@ if __name__ == '__main__':
     if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
         monitor_thread = threading.Thread(target=start_ids_monitor, daemon=True)
         monitor_thread.start()
-    socketio.run(app, debug=True, use_reloader=False) 
+    socketio.run(app, debug=True, use_reloader=False, host='0.0.0.0', port=8080) 
