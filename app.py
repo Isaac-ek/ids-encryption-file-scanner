@@ -414,8 +414,8 @@ def process_features_with_socketio(features):
 nm.process_features = process_features_with_socketio
 
 def start_ids_monitor():
-    # Start the monitor in simulation mode for safe testing
-    nm.start_monitor(simulate=True, sim_interval=5.0)
+    # Start the monitor with real network traffic on interface en0
+    nm.start_monitor(interface="en0", simulate=False)
 
 @app.route('/encrypt_decrypt/bulk_encrypt', methods=['POST'])
 @login_required

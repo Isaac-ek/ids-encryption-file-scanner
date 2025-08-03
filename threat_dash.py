@@ -123,8 +123,8 @@ def show_dashboard():
     # ── Continue with starting the IDS monitor, if not already started ──
     if not st.session_state["monitor_started"]:
         def run_ids():
-            # start_monitor(interface="wlp1s0", simulate=False)
-            start_monitor(simulate=True, sim_interval=0.4)
+            # Start real network monitoring on interface en0
+            start_monitor(interface="en0", simulate=False)
         thread = threading.Thread(target=run_ids, daemon=True)
         thread.start()
         st.session_state["monitor_started"] = True

@@ -102,7 +102,7 @@ class NetworkFeatureExtractor:
 
     PROTOCOL_TYPES = {6: 'tcp', 17: 'udp', 1: 'icmp'}
 
-    def __init__(self, interface: str = "wlp1s0", timeout: int = 60, detect_internal: bool = False):
+    def __init__(self, interface: str = "en0", timeout: int = 60, detect_internal: bool = False):
         self.interface            = interface
         self.timeout              = timeout
         self.connections: Dict[Tuple, Connection] = defaultdict(Connection)
@@ -795,7 +795,7 @@ def start_simulation(interval: float = 5.0):
 # 4) START MONITOR or SIMULATION
 # ────────────────────────────────────────────────────────────────────────────────
 
-def start_monitor(interface: str = "wlp1s0", simulate: bool = False, sim_interval: float = 2.0):
+def start_monitor(interface: str = "en0", simulate: bool = False, sim_interval: float = 2.0):
     """
     If simulate=False (default), starts AsyncSniffer on `interface` and processes real packets.
     If simulate=True, spawns a background thread that generates random features every `sim_interval` seconds.
@@ -827,7 +827,7 @@ def start_monitor(interface: str = "wlp1s0", simulate: bool = False, sim_interva
 # ────────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    extractor = NetworkFeatureExtractor(interface="wlp1s0", timeout=60, detect_internal=False)
+    extractor = NetworkFeatureExtractor(interface="en0", timeout=60, detect_internal=False)
     print("[INFO] Running IDS monitor in foreground (Ctrl+C to stop).")
     try:
         scapy.sniff(prn=packet_callback, filter="ip", store=False)
