@@ -22,6 +22,14 @@ from file_scanner import FileScanner
 from socket_manager import socketio, init_socketio
 from config import MODEL_DIR
 from ids_features import CLASS_NAMES, build_feature_frame, load_dataset
+from ids_features import (
+    FEATURE_COLUMNS_FILENAME,
+    PRIMARY_MODEL_FILENAME,
+    SCALER_FILENAME,
+    SPECIALIST_CONFIG_FILENAME,
+    SPECIALIST_MODEL_FILENAME,
+    combine_predictions,
+)
 from sklearn.metrics import precision_recall_curve, average_precision_score
 import joblib
 import numpy as np
@@ -886,19 +894,23 @@ def test_alert():
 @app.route('/model_metrics')
 @login_required
 def model_metrics():
-    model_path = os.path.join(MODEL_DIR, "ids_model_full.joblib")
-    scaler_path = os.path.join(MODEL_DIR, "scaler.joblib")
-    feature_columns_path = os.path.join(MODEL_DIR, "feature_columns.joblib")
+    model_path = os.path.join(MODEL_DIR, PRIMARY_MODEL_FILENAME)
+    specialist_model_path = os.path.join(MODEL_DIR, SPECIALIST_MODEL_FILENAME)
+    scaler_path = os.path.join(MODEL_DIR, SCALER_FILENAME)
+    feature_columns_path = os.path.join(MODEL_DIR, FEATURE_COLUMNS_FILENAME)
+    specialist_config_path = os.path.join(MODEL_DIR, SPECIALIST_CONFIG_FILENAME)
 
-    required_paths = [model_path, scaler_path, feature_columns_path]
+    required_paths = [model_path, specialist_model_path, scaler_path, feature_columns_path, specialist_config_path]
     missing_paths = [path for path in required_paths if not os.path.exists(path)]
     if missing_paths:
         flash('Model metrics are unavailable until the trained IDS artifacts are generated.', 'warning')
         return redirect(url_for('dashboard'))
 
     model = joblib.load(model_path)
+    specialist_model = joblib.load(specialist_model_path)
     scaler = joblib.load(scaler_path)
     feature_columns = joblib.load(feature_columns_path)
+    specialist_config = joblib.load(specialist_config_path)
 
     df_test = load_dataset("NSL_KDD_Test.csv")
 
@@ -913,8 +925,17 @@ def model_metrics():
     X_test_scaled = scaler.transform(X_test)
 
     # Predict
-    y_pred = model.predict(X_test_scaled)
+    primary_pred = model.predict(X_test_scaled)
     y_proba = model.predict_proba(X_test_scaled)
+    specialist_pred = specialist_model.predict(X_test_scaled)
+    specialist_proba = specialist_model.predict_proba(X_test_scaled)
+    y_pred = combine_predictions(
+        primary_pred=primary_pred,
+        primary_proba=y_proba,
+        specialist_pred=specialist_pred,
+        specialist_proba=specialist_proba,
+        specialist_config=specialist_config,
+    )
 
     # Metrics
     accuracy = accuracy_score(Y_test, y_pred) * 100

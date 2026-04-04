@@ -2,14 +2,25 @@
 import joblib
 import os
 import numpy as np
-from config import MODEL_DIR, DATA_DIR
+from config import MODEL_DIR
 from sklearn.metrics import classification_report, confusion_matrix
-from ids_features import CLASS_NAMES, build_feature_frame, load_dataset
+from ids_features import (
+    CLASS_NAMES,
+    FEATURE_COLUMNS_FILENAME,
+    PRIMARY_MODEL_FILENAME,
+    SCALER_FILENAME,
+    SPECIALIST_CONFIG_FILENAME,
+    SPECIALIST_MODEL_FILENAME,
+    build_feature_frame,
+    combine_predictions,
+    load_dataset,
+)
 
-# Load the trained model and scaler
-model = joblib.load(os.path.join(MODEL_DIR, "ids_model_full.joblib"))
-scaler = joblib.load(os.path.join(MODEL_DIR, "scaler.joblib"))
-feature_columns = joblib.load(os.path.join(MODEL_DIR, "feature_columns.joblib"))
+model = joblib.load(os.path.join(MODEL_DIR, PRIMARY_MODEL_FILENAME))
+specialist = joblib.load(os.path.join(MODEL_DIR, SPECIALIST_MODEL_FILENAME))
+scaler = joblib.load(os.path.join(MODEL_DIR, SCALER_FILENAME))
+feature_columns = joblib.load(os.path.join(MODEL_DIR, FEATURE_COLUMNS_FILENAME))
+specialist_config = joblib.load(os.path.join(MODEL_DIR, SPECIALIST_CONFIG_FILENAME))
 
 df_test = load_dataset("NSL_KDD_Test.csv")
 keep_classes = [0, 1, 2, 3]
@@ -24,7 +35,17 @@ df_test_full = build_feature_frame(df_test, feature_columns=feature_columns)
 X_test = df_test_full[feature_columns].to_numpy(dtype=np.float32)
 
 X_test_scaled = scaler.transform(X_test)
-y_pred = model.predict(X_test_scaled)
+primary_pred = model.predict(X_test_scaled)
+primary_proba = model.predict_proba(X_test_scaled)
+specialist_pred = specialist.predict(X_test_scaled)
+specialist_proba = specialist.predict_proba(X_test_scaled)
+y_pred = combine_predictions(
+    primary_pred=primary_pred,
+    primary_proba=primary_proba,
+    specialist_pred=specialist_pred,
+    specialist_proba=specialist_proba,
+    specialist_config=specialist_config,
+)
 
 print("Model performance on test data:")
 print("=" * 50)

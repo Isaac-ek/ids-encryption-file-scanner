@@ -21,16 +21,28 @@ from typing import Dict, Tuple, Set, List, Optional
 
 from config import MODEL_DIR
 import aes_encryptor  # your enhanced AES module
+from ids_features import (
+    FEATURE_COLUMNS_FILENAME,
+    PRIMARY_MODEL_FILENAME,
+    SCALER_FILENAME,
+    SPECIALIST_CONFIG_FILENAME,
+    SPECIALIST_MODEL_FILENAME,
+    combine_predictions,
+)
 from socket_manager import socketio
 
 # ── LOAD TRAINED ARTIFACTS ──────────────────────────────────────────────────────
-MODEL_PATH = os.path.join(MODEL_DIR, "ids_model_full.joblib")
-SCALER_PATH = os.path.join(MODEL_DIR, "scaler.joblib")
-FEATURE_COLUMNS_PATH = os.path.join(MODEL_DIR, "feature_columns.joblib")
+MODEL_PATH = os.path.join(MODEL_DIR, PRIMARY_MODEL_FILENAME)
+SPECIALIST_MODEL_PATH = os.path.join(MODEL_DIR, SPECIALIST_MODEL_FILENAME)
+SCALER_PATH = os.path.join(MODEL_DIR, SCALER_FILENAME)
+FEATURE_COLUMNS_PATH = os.path.join(MODEL_DIR, FEATURE_COLUMNS_FILENAME)
+SPECIALIST_CONFIG_PATH = os.path.join(MODEL_DIR, SPECIALIST_CONFIG_FILENAME)
 
 model = joblib.load(MODEL_PATH)
+specialist_model = joblib.load(SPECIALIST_MODEL_PATH)
 scaler = joblib.load(SCALER_PATH)
 feature_columns = joblib.load(FEATURE_COLUMNS_PATH)
+specialist_config = joblib.load(SPECIALIST_CONFIG_PATH)
 
 CATEGORICAL_COLS = ["protocol_type", "service", "flag"]
 label_map_rev = {0: "Normal", 1: "DoS", 2: "Probe", 3: "R2L", 4: "U2R"}
@@ -521,7 +533,17 @@ def process_features(features: Dict[str, object]):
     X_scaled = scaler.transform(X)
 
     # 3) Predict
-    pred = model.predict(X_scaled)[0]
+    primary_pred = model.predict(X_scaled)
+    primary_proba = model.predict_proba(X_scaled)
+    specialist_pred = specialist_model.predict(X_scaled)
+    specialist_proba = specialist_model.predict_proba(X_scaled)
+    pred = combine_predictions(
+        primary_pred=primary_pred,
+        primary_proba=primary_proba,
+        specialist_pred=specialist_pred,
+        specialist_proba=specialist_proba,
+        specialist_config=specialist_config,
+    )[0]
 
     # For simulation: force alert type to match simulated attack_type if src_ip is in simulation range
     sim_type = features.get("attack_type")

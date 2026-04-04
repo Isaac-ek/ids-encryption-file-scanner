@@ -32,6 +32,11 @@ LABEL_MAP = {
 
 CATEGORICAL_COLS = ["protocol_type", "service", "flag"]
 CLASS_NAMES = ["Normal", "DoS", "Probe", "R2L", "U2R"]
+PRIMARY_MODEL_FILENAME = "ids_model_full.joblib"
+SPECIALIST_MODEL_FILENAME = "ids_model_specialist.joblib"
+SCALER_FILENAME = "scaler.joblib"
+FEATURE_COLUMNS_FILENAME = "feature_columns.joblib"
+SPECIALIST_CONFIG_FILENAME = "ids_specialist_config.joblib"
 
 
 def load_dataset(filename):
@@ -59,3 +64,54 @@ def build_feature_frame(df, feature_columns=None):
         feature_columns = [col for col in full.columns if col != "label"]
 
     return full.reindex(columns=feature_columns + ["label"] if "label" in full.columns else feature_columns, fill_value=0)
+
+
+def prepare_feature_matrices(train_filename="NSL_KDD_Train.csv", test_filename="NSL_KDD_Test.csv"):
+    df_train = load_dataset(train_filename)
+    df_test = load_dataset(test_filename)
+    train_frame = build_feature_frame(df_train)
+    feature_columns = [col for col in train_frame.columns if col != "label"]
+    test_frame = build_feature_frame(df_test, feature_columns=feature_columns)
+    x_train = train_frame[feature_columns].to_numpy(dtype=np.float32)
+    y_train = train_frame["label"].to_numpy(dtype=int)
+    x_test = test_frame[feature_columns].to_numpy(dtype=np.float32)
+    y_test = test_frame["label"].to_numpy(dtype=int)
+    return x_train, y_train, x_test, y_test, feature_columns
+
+
+def combine_predictions(
+    primary_pred,
+    primary_proba,
+    specialist_pred=None,
+    specialist_proba=None,
+    specialist_config=None,
+):
+    final_pred = np.array(primary_pred, copy=True)
+    if specialist_pred is None or specialist_proba is None or not specialist_config:
+        return final_pred
+
+    override_base_classes = set(specialist_config.get("override_base_classes", [0]))
+    max_primary_confidence = specialist_config.get("max_primary_confidence", 0.8)
+    thresholds = specialist_config.get("thresholds", {})
+    specialist_classes = specialist_config.get("specialist_classes", [0, 3, 4])
+    class_to_index = {label: idx for idx, label in enumerate(specialist_classes)}
+
+    for i, base_label in enumerate(primary_pred):
+        candidate = int(specialist_pred[i])
+        if candidate not in thresholds:
+            continue
+
+        specialist_index = class_to_index.get(candidate)
+        if specialist_index is None:
+            continue
+
+        candidate_score = float(specialist_proba[i][specialist_index])
+        base_confidence = float(np.max(primary_proba[i]))
+        if (
+            base_label in override_base_classes
+            and base_confidence <= max_primary_confidence
+            and candidate_score >= thresholds[candidate]
+        ):
+            final_pred[i] = candidate
+
+    return final_pred
