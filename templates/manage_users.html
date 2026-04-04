@@ -1,16 +1,27 @@
 {% extends 'base.html' %}
 {% block title %}User Management - Admin{% endblock %}
 {% block content %}
-<h2>User Management</h2>
-<hr>
+<section class="page-header">
+  <div>
+    <div class="eyebrow">Identity Control</div>
+    <h1>User management</h1>
+    <p class="page-subtitle">Edit access, rotate passwords, and onboard operators into the NetSecure workspace.</p>
+  </div>
+</section>
 {% if msg %}
   <div class="alert alert-info">{{ msg }}</div>
 {% endif %}
-<div class="row">
-  <div class="col-md-7">
-    <h4>All Users</h4>
-    <div class="table-responsive">
-      <table class="table table-bordered table-hover">
+<div class="row g-4">
+  <div class="col-lg-7">
+    <section class="table-shell">
+      <div class="panel-head">
+        <div>
+          <h3 class="panel-title">All users</h3>
+          <p>Update names, passwords, and role assignments inline.</p>
+        </div>
+      </div>
+      <div class="table-responsive">
+      <table class="table">
         <thead class="table-light">
           <tr>
             <th>Username</th>
@@ -48,24 +59,31 @@
         </tbody>
       </table>
     </div>
+    </section>
   </div>
-  <div class="col-md-5">
-    <h4>Add New User</h4>
+  <div class="col-lg-5">
+    <section class="panel-card">
+    <div class="panel-head">
+      <div>
+        <h3 class="panel-title">Add new user</h3>
+        <p>Create a fresh operator profile with the correct access level.</p>
+      </div>
+    </div>
     <form method="post">
       <input type="hidden" name="action" value="add">
-      <div class="mb-2">
+      <div class="mb-3">
         <label>Username</label>
         <input type="text" name="username" class="form-control" required>
       </div>
-      <div class="mb-2">
+      <div class="mb-3">
         <label>Name</label>
         <input type="text" name="name" class="form-control" required>
       </div>
-      <div class="mb-2">
+      <div class="mb-3">
         <label>Password</label>
         <input type="password" name="password" class="form-control" required>
       </div>
-      <div class="mb-2">
+      <div class="mb-3">
         <label>Role</label>
         <select name="role" class="form-select">
           <option value="user">User</option>
@@ -74,7 +92,8 @@
       </div>
       <button type="submit" class="btn btn-success">Add User</button>
     </form>
+    </section>
   </div>
 </div>
 <a href="{{ url_for('admin') }}" class="btn btn-secondary mt-3">Back to Admin Panel</a>
-{% endblock %} 
+{% endblock %}

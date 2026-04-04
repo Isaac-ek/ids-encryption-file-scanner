@@ -5,6 +5,8 @@ import re
 from datetime import datetime
 from werkzeug.utils import secure_filename
 import subprocess
+import shutil
+import tempfile
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -12,8 +14,13 @@ logger = logging.getLogger(__name__)
 
 class FileScanner:
     def __init__(self):
-        self.scan_dir = os.path.join(os.path.dirname(__file__), 'scan_temp')
-        os.makedirs(self.scan_dir, exist_ok=True)
+        default_scan_dir = os.path.join(os.path.dirname(__file__), 'scan_temp')
+        self.scan_dir = os.environ.get('SCAN_TEMP_DIR', default_scan_dir)
+        try:
+            os.makedirs(self.scan_dir, exist_ok=True)
+        except PermissionError:
+            self.scan_dir = os.path.join(tempfile.gettempdir(), 'ids-encryption-file-scanner-scan')
+            os.makedirs(self.scan_dir, exist_ok=True)
         
         # Common malware signatures (MD5 hashes)
         self.malware_signatures = {
@@ -165,9 +172,11 @@ class FileScanner:
             
     def get_scanner_status(self):
         """Get the status of the scanner"""
+        clamav_available = shutil.which('clamscan') is not None
         return {
             'status': 'online',
             'version': '1.0.0',
             'signatures': len(self.malware_signatures),
-            'patterns': len(self.suspicious_patterns)
-        } 
+            'patterns': len(self.suspicious_patterns),
+            'clamav_available': clamav_available
+        }

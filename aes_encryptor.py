@@ -302,6 +302,7 @@ def rotate_key(quarantine_dir=None):
     qd = quarantine_dir or QUARANTINE_DIR
     key_old = load_or_generate_key()
     aesgcm_old = AESGCM(key_old)
+    _, public_key = load_or_generate_rsa_keys()
 
     # Load and update the log entries in memory
     log_entries = _load_log()

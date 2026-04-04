@@ -1,9 +1,14 @@
 {% extends 'base.html' %}
 {% block title %}Threat Logs - Admin{% endblock %}
 {% block content %}
-<h2>Threat Logs</h2>
-<hr>
-<div class="mb-3">
+<section class="page-header">
+  <div>
+    <div class="eyebrow">Threat Archive</div>
+    <h1>Threat logs</h1>
+    <p class="page-subtitle">Search by date, class, and network origin to inspect the historical incident stream.</p>
+  </div>
+</section>
+<section class="panel-card mb-4">
   <form class="row row-cols-lg-auto g-2 align-items-center" method="get">
     <div class="col-12">
       <input type="date" name="date" value="{{ request.args.date or '' }}" class="form-control" placeholder="Date">
@@ -31,32 +36,32 @@
       <a href="{{ export_json_url }}" class="btn btn-outline-info">Export JSON</a>
     </div>
   </form>
-</div>
-<div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+</section>
+<div class="table-shell">
+  <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
     <table class="table table-hover" id="logsTable">
-        <thead>
-            <tr>
-                <th>Time</th>
-                <th>Type</th>
-                <th>Source IP</th>
-                <th>Destination IP</th>
-                <!-- Add other columns as needed -->
-            </tr>
-        </thead>
-        <tbody id="logsTableBody">
-            {% for log in logs %}
-            <tr>
-                <td>{{ log.timestamp }}</td>
-                <td>{{ log.alert_type }}</td>
-                <td>{{ log.source_ip }}</td>
-                <td>{{ log.destination_ip }}</td>
-                <!-- Add other columns as needed -->
-            </tr>
-            {% endfor %}
-        </tbody>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Type</th>
+          <th>Source IP</th>
+          <th>Destination IP</th>
+        </tr>
+      </thead>
+      <tbody id="logsTableBody">
+        {% for log in logs %}
+        <tr>
+          <td>{{ log.timestamp }}</td>
+          <td><span class="soft-badge">{{ log.alert_type }}</span></td>
+          <td>{{ log.source_ip }}</td>
+          <td>{{ log.destination_ip }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
     </table>
+  </div>
 </div>
-<div class="d-flex justify-content-between align-items-center mt-2">
+<div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-3">
   <div>
     Showing <b>{{ (page-1)*per_page+1 }}</b> - <b>{{ (page-1)*per_page+logs|length }}</b> of <b>{{ total_entries }}</b> entries
   </div>
@@ -104,7 +109,6 @@ function loadMoreLogs() {
     fetch(`?page=${currentPage + 1}&per_page=${perPage}`)
         .then(response => response.text())
         .then(html => {
-            // Parse the returned HTML and extract new rows
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
             const newRows = doc.querySelectorAll('#logsTableBody tr');
@@ -120,4 +124,4 @@ tableContainer.addEventListener('scroll', function() {
     }
 });
 </script>
-{% endblock %} 
+{% endblock %}

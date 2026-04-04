@@ -3,13 +3,13 @@ from flask_login import LoginManager, UserMixin, login_user, login_required, log
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import csv
+import logging
 from collections import Counter
 import json
 from werkzeug.utils import secure_filename
 import zipfile
 import eventlet
 import threading
-import network_monitor as nm
 import base64
 import yaml
 from functools import wraps
@@ -20,6 +20,7 @@ import math
 from urllib.parse import urlencode
 from file_scanner import FileScanner
 from socket_manager import socketio, init_socketio
+from config import MODEL_DIR
 from sklearn.metrics import precision_recall_curve, average_precision_score
 import joblib
 import numpy as np
@@ -31,8 +32,20 @@ from sklearn.metrics import (
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.preprocessing import label_binarize
 
+logger = logging.getLogger(__name__)
+
+try:
+    import network_monitor as nm
+    IDS_MONITORING_AVAILABLE = True
+    IDS_MONITORING_ERROR = None
+except Exception as exc:
+    nm = None
+    IDS_MONITORING_AVAILABLE = False
+    IDS_MONITORING_ERROR = str(exc)
+    logger.warning("IDS monitoring is unavailable during startup: %s", exc)
+
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-me')
 init_socketio(app)
 
 login_manager = LoginManager()
@@ -57,6 +70,40 @@ MODEL_METRICS_CACHE = {
 
 def get_cached_model_metrics():
     return MODEL_METRICS_CACHE
+
+def get_recent_info_alerts():
+    info_alerts = []
+    audit_log_path = os.path.join('logs', 'user_audit.log')
+    if os.path.exists(audit_log_path):
+        with open(audit_log_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            entries = [json.loads(line) for line in lines if line.strip()]
+            for entry in sorted(entries, key=lambda e: e['timestamp'], reverse=True)[:10]:
+                msg = f"[{entry['timestamp']}] [AUDIT] {entry['action']} (user: {entry.get('admin')}, target: {entry.get('target_user')})"
+                info_alerts.append(msg)
+
+    enc_log_path = os.path.join('quarantine', 'encryption_log.json')
+    if os.path.exists(enc_log_path):
+        with open(enc_log_path, 'r', encoding='utf-8') as f:
+            try:
+                enc_entries = json.load(f)
+                for entry in sorted(enc_entries, key=lambda e: e['timestamp'], reverse=True)[:10]:
+                    msg = f"[{entry['timestamp']}] [ENCRYPT] {os.path.basename(entry['original'])} -> {os.path.basename(entry['encrypted'])}"
+                    info_alerts.append(msg)
+            except Exception:
+                logger.exception("Failed to load encryption log entries.")
+
+    import re
+    def extract_ts(message):
+        match = re.match(r'\[(.*?)\]', message)
+        if match:
+            try:
+                return datetime.fromisoformat(match.group(1).replace('Z', ''))
+            except Exception:
+                return datetime.min
+        return datetime.min
+
+    return sorted(info_alerts, key=extract_ts, reverse=True)[:20]
 
 def load_users():
     if not os.path.exists(USERS_FILE):
@@ -141,41 +188,7 @@ def dashboard():
     if 'type' in request.args and request.args['type']:
         selected_type = request.args['type']
         alerts = [a for a in alerts if a['alert_type'] == selected_type]
-    # Info/system alerts: model/scaler/feature load, simulation mode, etc.
-    info_alerts = []
-    # --- Add recent audit log entries ---
-    audit_log_path = os.path.join('logs', 'user_audit.log')
-    if os.path.exists(audit_log_path):
-        with open(audit_log_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-            entries = [json.loads(line) for line in lines if line.strip()]
-            for entry in sorted(entries, key=lambda e: e['timestamp'], reverse=True)[:10]:
-                msg = f"[{entry['timestamp']}] [AUDIT] {entry['action']} (user: {entry.get('admin')}, target: {entry.get('target_user')})"
-                info_alerts.append(msg)
-    # --- Add recent encryption events ---
-    enc_log_path = os.path.join('quarantine', 'encryption_log.json')
-    if os.path.exists(enc_log_path):
-        with open(enc_log_path, 'r', encoding='utf-8') as f:
-            try:
-                enc_entries = json.load(f)
-                for entry in sorted(enc_entries, key=lambda e: e['timestamp'], reverse=True)[:10]:
-                    msg = f"[{entry['timestamp']}] [ENCRYPT] {os.path.basename(entry['original'])} → {os.path.basename(entry['encrypted'])}"
-                    info_alerts.append(msg)
-            except Exception:
-                pass
-    # Sort all info_alerts by timestamp descending (parse timestamp)
-    import re
-    from datetime import datetime
-    def extract_ts(s):
-        m = re.match(r'\[(.*?)\]', s)
-        if m:
-            try:
-                return datetime.fromisoformat(m.group(1).replace('Z',''))
-            except Exception:
-                return datetime.min
-        return datetime.min
-    info_alerts = sorted(info_alerts, key=extract_ts, reverse=True)
-    info_alerts = info_alerts[:20]
+    info_alerts = get_recent_info_alerts()
     # Pagination logic
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 100))
@@ -386,36 +399,39 @@ def admin_upload():
         flash("No files uploaded.", "warning")
     return redirect(url_for('admin'))
 
-# Store the original process_features function
-original_process_features = nm.process_features
+if IDS_MONITORING_AVAILABLE and hasattr(nm, 'process_features'):
+    original_process_features = nm.process_features
 
-def process_features_with_socketio(features):
-    from datetime import datetime
-    # Call the original function
-    result = original_process_features(features)
-    # After logging, emit the new alert if an intrusion was detected
-    log_path = os.path.join('logs', 'threat_alerts.csv')
-    if os.path.exists(log_path):
-        with open(log_path, 'r') as f:
-            lines = [line.strip() for line in f if line.strip()]
-            if len(lines) > 1:
-                last = lines[-1].split(',')
-                if len(last) >= 4:
-                    alert = {
-                        'timestamp': last[0],
-                        'label': last[1],
-                        'src': last[2],
-                        'dst': last[3]
-                    }
-                    socketio.emit('new_alert', alert)
-    return result
+    def process_features_with_socketio(features):
+        result = original_process_features(features)
+        log_path = os.path.join('logs', 'threat_alerts.csv')
+        if os.path.exists(log_path):
+            with open(log_path, 'r', encoding='utf-8') as f:
+                lines = [line.strip() for line in f if line.strip()]
+                if len(lines) > 1:
+                    last = lines[-1].split(',')
+                    if len(last) >= 4:
+                        alert = {
+                            'timestamp': last[0],
+                            'label': last[1],
+                            'src': last[2],
+                            'dst': last[3]
+                        }
+                        socketio.emit('new_alert', alert)
+        return result
 
-# Replace the original function with our wrapped version
-nm.process_features = process_features_with_socketio
+    nm.process_features = process_features_with_socketio
 
 def start_ids_monitor():
-    # Start the monitor with real network traffic on interface en0
-    nm.start_monitor(interface="en0", simulate=False)
+    if not IDS_MONITORING_AVAILABLE or nm is None:
+        logger.warning("Skipping IDS monitor startup: %s", IDS_MONITORING_ERROR or "unknown error")
+        return
+
+    interface = os.environ.get('IDS_INTERFACE', 'en0')
+    try:
+        nm.start_monitor(interface=interface, simulate=False)
+    except Exception:
+        logger.exception("IDS monitor failed to start on interface %s", interface)
 
 @app.route('/encrypt_decrypt/bulk_encrypt', methods=['POST'])
 @login_required
@@ -828,6 +844,7 @@ def scan_page():
     return render_template('scan.html', name=current_user.name)
 
 @app.route('/scan', methods=['POST'])
+@login_required
 def scan_file():
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
@@ -855,6 +872,7 @@ def scan_file():
         }), 400
 
 @app.route('/scan/status')
+@login_required
 def scan_status():
     status = file_scanner.get_scanner_status()
     return jsonify(status)
@@ -867,16 +885,19 @@ def test_alert():
 @app.route('/model_metrics')
 @login_required
 def model_metrics():
-    # Update model/scaler/feature_columns loading to use the latest retrained files
-    MODEL_DIR = "models"
-    MODEL_PATH = os.path.join(MODEL_DIR, "ids_model_full.joblib")
-    SCALER_PATH = os.path.join(MODEL_DIR, "scaler.joblib")
-    FEATURE_COLUMNS_PATH = os.path.join(MODEL_DIR, "feature_columns.joblib")
+    model_path = os.path.join(MODEL_DIR, "ids_model_full.joblib")
+    scaler_path = os.path.join(MODEL_DIR, "scaler.joblib")
+    feature_columns_path = os.path.join(MODEL_DIR, "feature_columns.joblib")
 
-    # Load model, scaler, and feature columns at startup
-    model = joblib.load(MODEL_PATH)
-    scaler = joblib.load(SCALER_PATH)
-    feature_columns = joblib.load(FEATURE_COLUMNS_PATH)
+    required_paths = [model_path, scaler_path, feature_columns_path]
+    missing_paths = [path for path in required_paths if not os.path.exists(path)]
+    if missing_paths:
+        flash('Model metrics are unavailable until the trained IDS artifacts are generated.', 'warning')
+        return redirect(url_for('dashboard'))
+
+    model = joblib.load(model_path)
+    scaler = joblib.load(scaler_path)
+    feature_columns = joblib.load(feature_columns_path)
 
     # Update class names for dashboard and metrics
     CLASS_NAMES = ['Normal', 'DoS', 'Probe', 'R2L']
@@ -998,10 +1019,6 @@ def model_metrics():
         'class_support': class_support
     }
     return render_template('model_metrics.html', **metrics)
-
-def get_recent_info_alerts():
-    # ... (same logic as before for info_alerts aggregation) ...
-    return info_alerts
 
 def get_recent_detected_alerts():
     # Detected alerts from threat_alerts.csv
