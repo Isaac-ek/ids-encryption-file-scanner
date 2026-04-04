@@ -21,6 +21,7 @@ from urllib.parse import urlencode
 from file_scanner import FileScanner
 from socket_manager import socketio, init_socketio
 from config import MODEL_DIR
+from ids_features import CLASS_NAMES, build_feature_frame, load_dataset
 from sklearn.metrics import precision_recall_curve, average_precision_score
 import joblib
 import numpy as np
@@ -899,60 +900,12 @@ def model_metrics():
     scaler = joblib.load(scaler_path)
     feature_columns = joblib.load(feature_columns_path)
 
-    # Update class names for dashboard and metrics
-    CLASS_NAMES = ['Normal', 'DoS', 'Probe', 'R2L']
-
-    # Load test data
-    test_csv = "dataset/NSL_KDD_Test.csv"
-    col_names = [
-        "duration", "protocol_type", "service", "flag", "src_bytes",
-        "dst_bytes", "land", "wrong_fragment", "urgent", "hot", "num_failed_logins",
-        "logged_in", "num_compromised", "root_shell", "su_attempted", "num_root",
-        "num_file_creations", "num_shells", "num_access_files", "num_outbound_cmds",
-        "is_host_login", "is_guest_login", "count", "srv_count", "serror_rate",
-        "srv_serror_rate", "rerror_rate", "srv_rerror_rate", "same_srv_rate",
-        "diff_srv_rate", "srv_diff_host_rate", "dst_host_count", "dst_host_srv_count",
-        "dst_host_same_srv_rate", "dst_host_diff_srv_rate", "dst_host_same_src_port_rate",
-        "dst_host_srv_diff_host_rate", "dst_host_serror_rate", "dst_host_srv_serror_rate",
-        "dst_host_rerror_rate", "dst_host_srv_rerror_rate", "label"
-    ]
-    label_map = {
-        "normal": 0,
-        # DoS
-        "neptune": 1, "back": 1, "land": 1, "pod": 1, "smurf": 1, "teardrop": 1,
-        "mailbomb": 1, "apache2": 1, "processtable": 1, "udpstorm": 1, "worm": 1,
-        # Probe
-        "ipsweep": 2, "nmap": 2, "portsweep": 2, "satan": 2, "mscan": 2, "saint": 2,
-        # R2L
-        "ftp_write": 3, "guess_passwd": 3, "imap": 3, "multihop": 3, "phf": 3,
-        "spy": 3, "warezclient": 3, "warezmaster": 3, "sendmail": 3, "named": 3,
-        "snmpgetattack": 3, "snmpguess": 3, "xlock": 3, "xsnoop": 3, "httptunnel": 3,
-        # U2R
-        "buffer_overflow": 4, "loadmodule": 4, "perl": 4, "rootkit": 4,
-        "ps": 4, "sqlattack": 4, "xterm": 4
-    }
-    df_test = pd.read_csv(test_csv, names=col_names, header=None)
-    df_test["label"] = df_test["label"].replace(label_map)
+    df_test = load_dataset("NSL_KDD_Test.csv")
 
     # Filter for only Normal, DoS, Probe, and R2L
     keep_classes = [0, 1, 2, 3]
     df_test = df_test[df_test['label'].isin(keep_classes)].copy()
-
-    # Apply log1p to src_bytes and dst_bytes
-    for col in ['src_bytes', 'dst_bytes']:
-        df_test[col] = np.log1p(df_test[col])
-    # Add src_dst_ratio
-    df_test['src_dst_ratio'] = df_test['src_bytes'] / (df_test['dst_bytes'] + 1)
-    if 'src_dst_ratio' not in col_names:
-        col_names.insert(col_names.index('dst_bytes') + 1, 'src_dst_ratio')
-
-    # One-hot encode categorical columns and align with training
-    categorical_cols = ["protocol_type", "service", "flag"]
-    df_test_cat = pd.get_dummies(df_test[categorical_cols], prefix=categorical_cols)
-    # Align columns with training
-    df_test_cat = df_test_cat.reindex(columns=[c for c in feature_columns if c not in df_test.columns], fill_value=0)
-    df_test_num = df_test.drop(columns=categorical_cols)
-    df_test_full = pd.concat([df_test_num.reset_index(drop=True), df_test_cat.reset_index(drop=True)], axis=1)
+    df_test_full = build_feature_frame(df_test, feature_columns=feature_columns)
     X_test = df_test_full[feature_columns].to_numpy(dtype=np.float32)
     Y_test = df_test_full["label"].to_numpy(dtype=int)
 
@@ -968,13 +921,13 @@ def model_metrics():
     precision = precision_score(Y_test, y_pred, average='weighted') * 100
     recall = recall_score(Y_test, y_pred, average='weighted') * 100
     f1 = f1_score(Y_test, y_pred, average='weighted') * 100
-    conf_matrix = confusion_matrix(Y_test, y_pred).tolist()
+    conf_matrix = confusion_matrix(Y_test, y_pred, labels=keep_classes).tolist()
 
     # Multiclass ROC curve (one-vs-rest)
     Y_test_bin = label_binarize(Y_test, classes=keep_classes)
     roc_fpr = []
     roc_tpr = []
-    roc_labels = CLASS_NAMES
+    roc_labels = CLASS_NAMES[:4]
     auc_scores = []
     for i in range(len(keep_classes)):
         fpr, tpr, _ = roc_curve(Y_test_bin[:, i], y_proba[:, i])
@@ -997,7 +950,7 @@ def model_metrics():
     class_support = class_support.tolist()
 
     # Optionally, print classification report to console
-    print(classification_report(Y_test, y_pred, digits=4, labels=keep_classes, target_names=CLASS_NAMES))
+    print(classification_report(Y_test, y_pred, digits=4, labels=keep_classes, target_names=CLASS_NAMES[:4], zero_division=0))
 
     metrics = {
         'accuracy': round(accuracy, 2),
@@ -1012,7 +965,7 @@ def model_metrics():
         'pr_recall': pr_recall.tolist(),
         'pr_precision': pr_precision.tolist(),
         'pr_avg_precision': round(pr_avg_precision, 4),
-        'class_names': CLASS_NAMES,
+        'class_names': CLASS_NAMES[:4],
         'class_precision': class_precision,
         'class_recall': class_recall,
         'class_f1': class_f1,

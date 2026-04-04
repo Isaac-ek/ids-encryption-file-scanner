@@ -27,4 +27,6 @@ users.yaml
 
 # Model files (if large or sensitive)
 models/
-models2/ 
+models2/
+!models2/
+!models2/*.joblib
