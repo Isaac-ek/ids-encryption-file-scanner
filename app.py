@@ -543,7 +543,7 @@ def log_user_audit(action, target_user, details=None):
                 last = json.loads(lines[-1].decode('utf-8'))
                 prev_hash = last.get('entry_hash', '0')
     entry = {
-        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
+        'timestamp': datetime.utcnow().isoformat() + 'Z',
         'admin': getattr(current_user, 'id', None),
         'action': action,
         'target_user': target_user,
