@@ -8,7 +8,10 @@ from collections import Counter
 import json
 from werkzeug.utils import secure_filename
 import zipfile
-import eventlet
+try:
+    import eventlet
+except Exception:
+    eventlet = None
 import threading
 import base64
 import yaml
@@ -44,6 +47,8 @@ from sklearn.preprocessing import label_binarize
 logger = logging.getLogger(__name__)
 
 try:
+    if os.environ.get('DISABLE_IDS_MONITOR') == '1':
+        raise RuntimeError('IDS monitoring disabled by environment')
     import network_monitor as nm
     IDS_MONITORING_AVAILABLE = True
     IDS_MONITORING_ERROR = None
@@ -57,13 +62,19 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-me')
 init_socketio(app)
 
+BASE_DIR = os.path.dirname(__file__)
+STORAGE_DIR = os.environ.get('APP_STORAGE_DIR', BASE_DIR)
+LOGS_DIR = os.path.join(STORAGE_DIR, 'logs')
+SENSITIVE_DIR = os.path.join(STORAGE_DIR, 'sensitive_data')
+QUARANTINE_DIR = os.path.join(STORAGE_DIR, 'quarantine')
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-USERS_FILE = os.path.join(os.path.dirname(__file__), 'users.yaml')
-AUDIT_LOG = os.path.join('logs', 'user_audit.log')
-RULES_FILE = os.path.join(os.path.dirname(__file__), 'rules.yaml')
+USERS_FILE = os.path.join(STORAGE_DIR, 'users.yaml')
+AUDIT_LOG = os.path.join(BASE_DIR, 'logs', 'user_audit.log')
+AUDIT_LOG = os.path.join(LOGS_DIR, 'user_audit.log')
+RULES_FILE = os.path.join(STORAGE_DIR, 'rules.yaml')
 
 # At module level, keep a cache of recent info and detected alerts
 recent_info_alerts = []
@@ -80,9 +91,23 @@ MODEL_METRICS_CACHE = {
 def get_cached_model_metrics():
     return MODEL_METRICS_CACHE
 
+
+def ensure_runtime_storage():
+    os.makedirs(STORAGE_DIR, exist_ok=True)
+    os.makedirs(LOGS_DIR, exist_ok=True)
+    os.makedirs(SENSITIVE_DIR, exist_ok=True)
+    os.makedirs(QUARANTINE_DIR, exist_ok=True)
+
+    if not os.path.exists(RULES_FILE):
+        source_rules = os.path.join(BASE_DIR, 'rules.yaml')
+        if os.path.exists(source_rules):
+            with open(source_rules, 'r', encoding='utf-8') as src:
+                with open(RULES_FILE, 'w', encoding='utf-8') as dst:
+                    dst.write(src.read())
+
 def get_recent_info_alerts():
     info_alerts = []
-    audit_log_path = os.path.join('logs', 'user_audit.log')
+    audit_log_path = AUDIT_LOG
     if os.path.exists(audit_log_path):
         with open(audit_log_path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
@@ -91,7 +116,7 @@ def get_recent_info_alerts():
                 msg = f"[{entry['timestamp']}] [AUDIT] {entry['action']} (user: {entry.get('admin')}, target: {entry.get('target_user')})"
                 info_alerts.append(msg)
 
-    enc_log_path = os.path.join('quarantine', 'encryption_log.json')
+    enc_log_path = os.path.join(QUARANTINE_DIR, 'encryption_log.json')
     if os.path.exists(enc_log_path):
         with open(enc_log_path, 'r', encoding='utf-8') as f:
             try:
@@ -115,6 +140,7 @@ def get_recent_info_alerts():
     return sorted(info_alerts, key=extract_ts, reverse=True)[:20]
 
 def load_users():
+    ensure_runtime_storage()
     if not os.path.exists(USERS_FILE):
         return []
     with open(USERS_FILE, 'r', encoding='utf-8') as f:
@@ -122,6 +148,7 @@ def load_users():
         return data.get('users', [])
 
 def save_users(users):
+    ensure_runtime_storage()
     with open(USERS_FILE, 'w', encoding='utf-8') as f:
         yaml.safe_dump({'users': users}, f)
 
@@ -180,7 +207,7 @@ def logout():
 @login_required
 def dashboard():
     alerts = []
-    log_path = os.path.join('logs', 'threat_alerts.csv')
+    log_path = os.path.join(LOGS_DIR, 'threat_alerts.csv')
     if os.path.exists(log_path):
         with open(log_path, newline='') as csvfile:
             reader = csv.DictReader(csvfile)
@@ -232,8 +259,9 @@ def dashboard():
 @app.route('/encrypt_decrypt', methods=['GET'])
 @login_required
 def encrypt_decrypt():
-    sensitive_dir = os.path.join(os.path.dirname(__file__), 'sensitive_data')
-    quarantine_dir = os.path.join(os.path.dirname(__file__), 'quarantine')
+    ensure_runtime_storage()
+    sensitive_dir = SENSITIVE_DIR
+    quarantine_dir = QUARANTINE_DIR
     sensitive_files = []
     encrypted_files = []
     if os.path.exists(sensitive_dir):
@@ -245,21 +273,22 @@ def encrypt_decrypt():
 @app.route('/encrypt_decrypt/encrypt', methods=['POST'])
 @login_required
 def encrypt_file_route():
-    from aes_encryptor import encrypt_file, load_or_generate_key, QUARANTINE_DIR
+    from aes_encryptor import encrypt_file, load_or_generate_key, QUARANTINE_DIR as AES_QUARANTINE_DIR
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     file = request.files.get('file')
     if not file or not file.filename:
         flash('No file selected for encryption.', 'warning')
         return redirect(url_for('encrypt_decrypt'))
     filename = secure_filename(file.filename)
-    sensitive_dir = os.path.join(os.path.dirname(__file__), 'sensitive_data')
+    ensure_runtime_storage()
+    sensitive_dir = SENSITIVE_DIR
     os.makedirs(sensitive_dir, exist_ok=True)
     file_path = os.path.join(sensitive_dir, filename)
     file.save(file_path)
     # Encrypt the file
     key = load_or_generate_key()
     aesgcm = AESGCM(key)
-    enc_path = os.path.join(QUARANTINE_DIR, filename + '.enc')
+    enc_path = os.path.join(AES_QUARANTINE_DIR, filename + '.enc')
     try:
         encrypt_file(aesgcm, file_path, enc_path, log_entries=[])
         flash(f'File encrypted and stored as {enc_path}', 'success')
@@ -270,14 +299,15 @@ def encrypt_file_route():
 @app.route('/encrypt_decrypt/decrypt', methods=['POST'])
 @login_required
 def decrypt_file_route():
-    from aes_encryptor import decrypt_file, load_or_generate_key, QUARANTINE_DIR
+    from aes_encryptor import decrypt_file, load_or_generate_key
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     file = request.files.get('file')
     if not file or not file.filename:
         flash('No file selected for decryption.', 'warning')
         return redirect(url_for('encrypt_decrypt'))
     filename = secure_filename(file.filename)
-    quarantine_dir = os.path.join(os.path.dirname(__file__), 'quarantine')
+    ensure_runtime_storage()
+    quarantine_dir = QUARANTINE_DIR
     os.makedirs(quarantine_dir, exist_ok=True)
     enc_path = os.path.join(quarantine_dir, filename)
     file.save(enc_path)
@@ -302,9 +332,9 @@ def download_file():
     if not filename:
         return "No file specified", 400
     if file_type == 'sensitive':
-        dir_path = os.path.join(os.path.dirname(__file__), 'sensitive_data')
+        dir_path = SENSITIVE_DIR
     elif file_type == 'encrypted':
-        dir_path = os.path.join(os.path.dirname(__file__), 'quarantine')
+        dir_path = QUARANTINE_DIR
     else:
         return "Invalid file type", 400
     file_path = os.path.join(dir_path, filename)
@@ -316,7 +346,7 @@ def download_file():
 @login_required
 def admin():
     # Load encrypted files log
-    enc_log_path = os.path.join('quarantine', 'encryption_log.json')
+    enc_log_path = os.path.join(QUARANTINE_DIR, 'encryption_log.json')
     encrypted_files = []
     if os.path.exists(enc_log_path):
         with open(enc_log_path, 'r', encoding='utf-8') as f:
@@ -351,7 +381,7 @@ def admin():
                 restore_msg = f"Restored: {', '.join(restored)}"
     # Last intrusion notification
     last_intrusion = None
-    log_path = os.path.join('logs', 'threat_alerts.csv')
+    log_path = os.path.join(LOGS_DIR, 'threat_alerts.csv')
     if os.path.exists(log_path):
         with open(log_path, 'r') as f:
             lines = [line.strip() for line in f if line.strip()]
@@ -367,7 +397,7 @@ def admin_download():
     if not enc_path:
         return "No file specified", 400
     # Find the log entry
-    enc_log_path = os.path.join('quarantine', 'encryption_log.json')
+    enc_log_path = os.path.join(QUARANTINE_DIR, 'encryption_log.json')
     if not os.path.exists(enc_log_path):
         return "No log found", 404
     with open(enc_log_path, 'r', encoding='utf-8') as f:
@@ -392,7 +422,8 @@ def admin_download():
 @app.route('/admin/upload', methods=['POST'])
 @login_required
 def admin_upload():
-    upload_dir = os.path.join(os.path.dirname(__file__), 'sensitive_data')
+    ensure_runtime_storage()
+    upload_dir = SENSITIVE_DIR
     os.makedirs(upload_dir, exist_ok=True)
     files = request.files.getlist('file')
     uploaded = []
@@ -413,7 +444,7 @@ if IDS_MONITORING_AVAILABLE and hasattr(nm, 'process_features'):
 
     def process_features_with_socketio(features):
         result = original_process_features(features)
-        log_path = os.path.join('logs', 'threat_alerts.csv')
+        log_path = os.path.join(LOGS_DIR, 'threat_alerts.csv')
         if os.path.exists(log_path):
             with open(log_path, 'r', encoding='utf-8') as f:
                 lines = [line.strip() for line in f if line.strip()]
@@ -442,19 +473,43 @@ def start_ids_monitor():
     except Exception:
         logger.exception("IDS monitor failed to start on interface %s", interface)
 
+
+def build_simulated_threat_features(threat_type: str):
+    if not IDS_MONITORING_AVAILABLE or nm is None or not hasattr(nm, 'generate_random_features'):
+        raise RuntimeError('IDS simulation is unavailable until monitoring artifacts are loaded.')
+
+    allowed_types = {'normal', 'dos', 'probe', 'r2l'}
+    normalized_type = (threat_type or 'random').strip().lower()
+    if normalized_type not in allowed_types and normalized_type != 'random':
+        raise ValueError(f"Unsupported threat type: {threat_type}")
+
+    features = nm.generate_random_features()
+    if normalized_type == 'random':
+        return features
+
+    for _ in range(24):
+        candidate = nm.generate_random_features()
+        if candidate.get('attack_type') == normalized_type:
+            features = candidate
+            break
+
+    features['attack_type'] = normalized_type
+    return features
+
 @app.route('/encrypt_decrypt/bulk_encrypt', methods=['POST'])
 @login_required
 def bulk_encrypt():
-    from aes_encryptor import encrypt_file, load_or_generate_key, QUARANTINE_DIR
+    from aes_encryptor import encrypt_file, load_or_generate_key, QUARANTINE_DIR as AES_QUARANTINE_DIR
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     files = request.form.getlist('files')
-    sensitive_dir = os.path.join(os.path.dirname(__file__), 'sensitive_data')
+    ensure_runtime_storage()
+    sensitive_dir = SENSITIVE_DIR
     key = load_or_generate_key()
     aesgcm = AESGCM(key)
     success, failed = [], []
     for filename in files:
         file_path = os.path.join(sensitive_dir, filename)
-        enc_path = os.path.join(QUARANTINE_DIR, filename + '.enc')
+        enc_path = os.path.join(AES_QUARANTINE_DIR, filename + '.enc')
         try:
             encrypt_file(aesgcm, file_path, enc_path, log_entries=[])
             success.append(filename)
@@ -469,11 +524,12 @@ def bulk_encrypt():
 @app.route('/encrypt_decrypt/bulk_decrypt', methods=['POST'])
 @login_required
 def bulk_decrypt():
-    from aes_encryptor import decrypt_file, load_or_generate_key, QUARANTINE_DIR
+    from aes_encryptor import decrypt_file, load_or_generate_key
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
     files = request.form.getlist('files')
-    quarantine_dir = os.path.join(os.path.dirname(__file__), 'quarantine')
-    sensitive_dir = os.path.join(os.path.dirname(__file__), 'sensitive_data')
+    ensure_runtime_storage()
+    quarantine_dir = QUARANTINE_DIR
+    sensitive_dir = SENSITIVE_DIR
     key = load_or_generate_key()
     aesgcm = AESGCM(key)
     success, failed = [], []
@@ -499,9 +555,9 @@ def preview_file():
     if not filename:
         return {"error": "No file specified"}, 400
     if file_type == 'sensitive':
-        dir_path = os.path.join(os.path.dirname(__file__), 'sensitive_data')
+        dir_path = SENSITIVE_DIR
     elif file_type == 'encrypted':
-        dir_path = os.path.join(os.path.dirname(__file__), 'quarantine')
+        dir_path = QUARANTINE_DIR
     else:
         return {"error": "Invalid file type"}, 400
     file_path = os.path.join(dir_path, filename)
@@ -529,36 +585,36 @@ def preview_file():
         return {"error": str(e)}, 500
 
 def log_user_audit(action, target_user, details=None):
-    os.makedirs(os.path.dirname(AUDIT_LOG), exist_ok=True)
-    # Get previous hash
-    prev_hash = '0'
-    if os.path.exists(AUDIT_LOG):
-        with open(AUDIT_LOG, 'rb') as f:
-            try:
-                f.seek(-4096, os.SEEK_END)
-            except OSError:
-                f.seek(0)
-            lines = f.readlines()
-            if lines:
-                last = json.loads(lines[-1].decode('utf-8'))
-                prev_hash = last.get('entry_hash', '0')
-    entry = {
-        'timestamp': datetime.utcnow().isoformat() + 'Z',
-        'admin': getattr(current_user, 'id', None),
-        'action': action,
-        'target_user': target_user,
-        'details': details or {},
-        'prev_hash': prev_hash
-    }
-    # Compute entry hash
-    entry_str = json.dumps(entry, sort_keys=True)
-    entry_hash = hashlib.sha256((entry_str + prev_hash).encode('utf-8')).hexdigest()
-    entry['entry_hash'] = entry_hash
-    with open(AUDIT_LOG, 'a', encoding='utf-8') as f:
-        f.write(json.dumps(entry) + '\n')
-    # Emit info_alert for live log
-    msg = f"[{entry['timestamp']}] [AUDIT] {entry['action']} (user: {entry.get('admin')}, target: {entry.get('target_user')})"
-    socketio.emit('info_alert', {'message': msg})
+    try:
+        os.makedirs(os.path.dirname(AUDIT_LOG), exist_ok=True)
+        prev_hash = '0'
+        if os.path.exists(AUDIT_LOG):
+            with open(AUDIT_LOG, 'rb') as f:
+                try:
+                    f.seek(-4096, os.SEEK_END)
+                except OSError:
+                    f.seek(0)
+                lines = f.readlines()
+                if lines:
+                    last = json.loads(lines[-1].decode('utf-8'))
+                    prev_hash = last.get('entry_hash', '0')
+        entry = {
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'admin': getattr(current_user, 'id', None),
+            'action': action,
+            'target_user': target_user,
+            'details': details or {},
+            'prev_hash': prev_hash
+        }
+        entry_str = json.dumps(entry, sort_keys=True)
+        entry_hash = hashlib.sha256((entry_str + prev_hash).encode('utf-8')).hexdigest()
+        entry['entry_hash'] = entry_hash
+        with open(AUDIT_LOG, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(entry) + '\n')
+        msg = f"[{entry['timestamp']}] [AUDIT] {entry['action']} (user: {entry.get('admin')}, target: {entry.get('target_user')})"
+        socketio.emit('info_alert', {'message': msg})
+    except Exception:
+        logger.exception("Failed to write audit log entry for action %s", action)
 
 def verify_audit_log():
     """Returns (is_valid, entries, tamper_index)"""
@@ -704,7 +760,7 @@ def threat_logs():
     import csv
     import math
     from io import StringIO
-    log_path = os.path.join('logs', 'threat_alerts.csv')
+    log_path = os.path.join(LOGS_DIR, 'threat_alerts.csv')
     logs = []
     if os.path.exists(log_path):
         with open(log_path, newline='') as csvfile:
@@ -891,6 +947,45 @@ def test_alert():
     socketio.emit('attack_alert', {'message': 'Test attack from /test_alert'})
     return 'Test alert sent!'
 
+
+@app.route('/simulate_threat', methods=['POST'])
+@login_required
+@admin_required
+def simulate_threat():
+    if not IDS_MONITORING_AVAILABLE or nm is None or not hasattr(nm, 'process_features'):
+        return jsonify({'error': 'IDS monitoring is currently unavailable.'}), 503
+
+    payload = request.get_json(silent=True) or request.form
+    requested_type = (payload.get('threat_type') if payload else None) or 'random'
+
+    try:
+        features = build_simulated_threat_features(requested_type)
+        result = nm.process_features(features)
+        log_user_audit(
+            'simulate_threat',
+            getattr(current_user, 'id', None),
+            {
+                'threat_type': features.get('attack_type', requested_type),
+                'src_ip': features.get('src_ip'),
+                'dst_ip': features.get('dst_ip'),
+                'simulation_result': result,
+            }
+        )
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception:
+        logger.exception("Threat simulation failed for type %s", requested_type)
+        return jsonify({'error': 'Threat simulation failed.'}), 500
+
+    return jsonify({
+        'status': 'ok',
+        'requested_type': requested_type,
+        'generated_type': features.get('attack_type', requested_type),
+        'source_ip': features.get('src_ip'),
+        'destination_ip': features.get('dst_ip'),
+        'result': result,
+    })
+
 @app.route('/model_metrics')
 @login_required
 def model_metrics():
@@ -956,6 +1051,8 @@ def model_metrics():
         roc_tpr.append(tpr.tolist())
         auc_scores.append(auc(fpr, tpr))
     auc_score = np.mean(auc_scores)
+    roc_zoom_candidates = [max((point for point in fpr if point < 1.0), default=0.0) for fpr in roc_fpr]
+    roc_zoom_max = max(0.15, min(0.6, max(roc_zoom_candidates) * 1.15 if roc_zoom_candidates else 0.3))
 
     # PR curve for all classes (optional, not shown)
     pr_precision, pr_recall, _ = precision_recall_curve((Y_test > 0).astype(int), y_proba.max(axis=1))
@@ -982,6 +1079,7 @@ def model_metrics():
         'roc_fpr': roc_fpr,
         'roc_tpr': roc_tpr,
         'roc_labels': roc_labels,
+        'roc_zoom_max': round(roc_zoom_max, 4),
         'auc': round(auc_score, 4),
         'pr_recall': pr_recall.tolist(),
         'pr_precision': pr_precision.tolist(),
@@ -996,7 +1094,7 @@ def model_metrics():
 
 def get_recent_detected_alerts():
     # Detected alerts from threat_alerts.csv
-    log_path = os.path.join('logs', 'threat_alerts.csv')
+    log_path = os.path.join(LOGS_DIR, 'threat_alerts.csv')
     detected_alerts = []
     if os.path.exists(log_path):
         with open(log_path, newline='') as csvfile:

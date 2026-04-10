@@ -79,13 +79,31 @@
     </div>
   </div>
 </div>
-<div class="row mt-4">
-  <div class="col-md-6">
+<div class="row mt-4 g-4">
+  <div class="col-12">
     <div class="panel-card mb-4">
-      <div class="panel-head"><h3 class="panel-title">ROC curve</h3></div>
-      <div class="card-body" style="height: 300px; min-height: 300px;">
-        <canvas id="rocChart" height="300"></canvas>
-        <div class="mt-3">AUC: <b>{{ auc }}</b></div>
+      <div class="panel-head">
+        <div>
+          <h3 class="panel-title">ROC curve</h3>
+          <p>Zoomed into the low-false-positive region so the class separation is easier to inspect.</p>
+        </div>
+        <div class="soft-badge">Mean AUC <strong>{{ auc }}</strong></div>
+      </div>
+      <div class="card-body" style="height: 430px; min-height: 430px;">
+        <canvas id="rocChart" height="430"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-12">
+    <div class="panel-card mb-4">
+      <div class="panel-head">
+        <div>
+          <h3 class="panel-title">Full ROC extent</h3>
+          <p>The complete 0 to 1 view remains available for context.</p>
+        </div>
+      </div>
+      <div class="card-body" style="height: 320px; min-height: 320px;">
+        <canvas id="rocFullChart" height="320"></canvas>
       </div>
     </div>
   </div>
@@ -129,6 +147,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const rocCtx = document.getElementById('rocChart').getContext('2d');
   const rocFpr = {{ roc_fpr|tojson }};
   const rocTpr = {{ roc_tpr|tojson }};
+  const rocZoomMax = {{ roc_zoom_max|tojson }};
   const rocLabels = ['1: Normal', '2: DoS', '3: Probe', '4: R2L'];
   const rocColors = [
     'rgba(76, 166, 255, 0.9)',
@@ -147,6 +166,19 @@ document.addEventListener('DOMContentLoaded', function() {
     borderWidth: 3,
     borderDash: rocBorderDash[i]
   }));
+  const rocPlugins = {
+    legend: {
+      position: 'bottom',
+      labels: { usePointStyle: true, boxWidth: 10 }
+    },
+    tooltip: {
+      callbacks: {
+        label(context) {
+          return `${context.dataset.label}: FPR ${context.parsed.x.toFixed(3)}, TPR ${context.parsed.y.toFixed(3)}`;
+        }
+      }
+    }
+  };
   new Chart(rocCtx, {
     type: 'line',
     data: { datasets: rocDatasets },
@@ -154,9 +186,38 @@ document.addEventListener('DOMContentLoaded', function() {
       responsive: true,
       maintainAspectRatio: false,
       scales: {
+        x: {
+          title: { display: true, text: 'False Positive Rate' },
+          min: 0,
+          max: rocZoomMax,
+          ticks: {
+            callback(value) {
+              return Number(value).toFixed(2);
+            }
+          }
+        },
+        y: {
+          title: { display: true, text: 'True Positive Rate' },
+          min: 0.5,
+          max: 1
+        }
+      },
+      plugins: rocPlugins
+    }
+  });
+
+  const rocFullCtx = document.getElementById('rocFullChart').getContext('2d');
+  new Chart(rocFullCtx, {
+    type: 'line',
+    data: { datasets: rocDatasets.map(dataset => ({ ...dataset, pointRadius: 1.5, borderWidth: 2 })) },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
         x: { title: { display: true, text: 'False Positive Rate' }, min: 0, max: 1 },
         y: { title: { display: true, text: 'True Positive Rate' }, min: 0, max: 1 }
-      }
+      },
+      plugins: rocPlugins
     }
   });
 });

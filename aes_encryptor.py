@@ -14,9 +14,10 @@ from getpass import getpass
 
 # ── CONFIGURABLE PATHS ─────────────────────────────────────────────────────────
 BASE_DIR        = os.path.dirname(os.path.abspath(__file__))
-TARGET_DIR      = os.path.join(BASE_DIR, "sensitive_data")
-QUARANTINE_DIR  = os.path.join(BASE_DIR, "quarantine")
-KEYS_DIR        = os.path.join(BASE_DIR, "keys")
+STORAGE_DIR     = os.environ.get("APP_STORAGE_DIR", BASE_DIR)
+TARGET_DIR      = os.path.join(STORAGE_DIR, "sensitive_data")
+QUARANTINE_DIR  = os.path.join(STORAGE_DIR, "quarantine")
+KEYS_DIR        = os.path.join(STORAGE_DIR, "keys")
 RSA_PRIV_PATH   = os.path.join(KEYS_DIR, "rsa_private.pem")
 RSA_PUB_PATH    = os.path.join(KEYS_DIR, "rsa_public.pem")
 AES_KEY_PATH    = os.path.join(KEYS_DIR, "aes_gcm_key.bin.enc")  # now encrypted

@@ -56,6 +56,37 @@
     </div>
 </section>
 
+{% if current_user.role == 'admin' %}
+<section class="panel-card mb-4">
+    <div class="panel-head">
+        <div>
+            <h3 class="panel-title">Threat simulation</h3>
+            <p>Inject controlled events into the live pipeline to test alerts, logging, and operator visibility.</p>
+        </div>
+        <div class="soft-badge">Admin only</div>
+    </div>
+    <div class="card-grid cols-2">
+        <div>
+            <label for="simThreatType" class="form-label">Threat type</label>
+            <select class="form-select" id="simThreatType">
+                <option value="random">Random weighted mix</option>
+                <option value="dos">DoS</option>
+                <option value="probe">Probe</option>
+                <option value="r2l">R2L</option>
+                <option value="normal">Normal traffic</option>
+            </select>
+        </div>
+        <div class="d-flex align-items-end gap-2 flex-wrap">
+            <button class="btn btn-primary" id="injectThreatButton">
+                <i class="fas fa-satellite-dish"></i>
+                Inject simulated event
+            </button>
+            <div class="soft-badge" id="simulateThreatStatus">Ready</div>
+        </div>
+    </div>
+</section>
+{% endif %}
+
 <div class="row g-4">
     <div class="col-xl-8">
         <section class="table-shell">
@@ -258,6 +289,46 @@
         socket.on('info_alert', function(payload) {
             addLogLine(payload.message, 'other');
         });
+
+        const injectThreatButton = document.getElementById('injectThreatButton');
+        const simThreatType = document.getElementById('simThreatType');
+        const simulateThreatStatus = document.getElementById('simulateThreatStatus');
+        if (injectThreatButton && simThreatType && simulateThreatStatus) {
+            injectThreatButton.addEventListener('click', async function() {
+                const originalLabel = injectThreatButton.innerHTML;
+                injectThreatButton.disabled = true;
+                injectThreatButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Injecting...';
+                simulateThreatStatus.textContent = 'Running simulation...';
+
+                try {
+                    const response = await fetch('/simulate_threat', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            threat_type: simThreatType.value
+                        })
+                    });
+                    const payload = await response.json();
+                    if (!response.ok) {
+                        throw new Error(payload.error || 'Simulation failed');
+                    }
+
+                    const summary = `Simulated ${payload.generated_type.toUpperCase()} from ${payload.source_ip} to ${payload.destination_ip}`;
+                    simulateThreatStatus.textContent = summary;
+                    showAlertToast(summary);
+                    addLogLine(`[SIMULATION] ${summary}`, payload.generated_type);
+                    setTimeout(() => window.location.reload(), 900);
+                } catch (error) {
+                    simulateThreatStatus.textContent = error.message;
+                    addLogLine(`[SIMULATION] ${error.message}`, 'other');
+                } finally {
+                    injectThreatButton.disabled = false;
+                    injectThreatButton.innerHTML = originalLabel;
+                }
+            });
+        }
 
         fetch('/dashboard/info_alerts').then(r => r.json()).then(data => {
             (data.info_alerts || []).reverse().forEach(msg => addLogLine(msg, 'info'));

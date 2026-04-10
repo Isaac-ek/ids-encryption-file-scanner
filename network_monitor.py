@@ -31,6 +31,11 @@ from ids_features import (
 )
 from socket_manager import socketio
 
+BASE_DIR = os.path.dirname(__file__)
+STORAGE_DIR = os.environ.get("APP_STORAGE_DIR", BASE_DIR)
+THREAT_LOG_PATH = os.path.join(STORAGE_DIR, "logs", "threat_alerts.csv")
+THREAT_LOG_HEADER = "timestamp,alert_type,src_ip,dst_ip\n"
+
 # ── LOAD TRAINED ARTIFACTS ──────────────────────────────────────────────────────
 MODEL_PATH = os.path.join(MODEL_DIR, PRIMARY_MODEL_FILENAME)
 SPECIALIST_MODEL_PATH = os.path.join(MODEL_DIR, SPECIALIST_MODEL_FILENAME)
@@ -559,10 +564,13 @@ def process_features(features: Dict[str, object]):
         dst = features.get("dst_ip", "SIM")
         alert_message = f"[ALERT][SIM] {label_map_rev[pred]} → simulated src={src}, dst={dst}"
         print(alert_message)
-        os.makedirs("logs", exist_ok=True)
+        os.makedirs(os.path.dirname(THREAT_LOG_PATH), exist_ok=True)
         from datetime import datetime
         now = datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%fZ')
-        with open("logs/threat_alerts.csv", "a") as f_log:
+        if not os.path.exists(THREAT_LOG_PATH) or os.path.getsize(THREAT_LOG_PATH) == 0:
+            with open(THREAT_LOG_PATH, "w", encoding="utf-8") as f_log:
+                f_log.write(THREAT_LOG_HEADER)
+        with open(THREAT_LOG_PATH, "a", encoding="utf-8") as f_log:
             f_log.write(
                 f"{now},{label_map_rev[pred]},{src},{dst}\n"
             )

@@ -18,7 +18,7 @@ class FileScanner:
         self.scan_dir = os.environ.get('SCAN_TEMP_DIR', default_scan_dir)
         try:
             os.makedirs(self.scan_dir, exist_ok=True)
-        except PermissionError:
+        except OSError:
             self.scan_dir = os.path.join(tempfile.gettempdir(), 'ids-encryption-file-scanner-scan')
             os.makedirs(self.scan_dir, exist_ok=True)
         
