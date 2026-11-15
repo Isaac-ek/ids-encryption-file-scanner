@@ -165,7 +165,8 @@ def create_user(user_in: UserCreate, db: Session = Depends(get_db), current_user
         username=user_in.username,
         name=user_in.name,
         password=hashed_password,
-        role=user_in.role
+        role=user_in.role,
+        email=str(user_in.email) if user_in.email else None,
     )
     db.add(db_user)
     db.commit()
@@ -192,6 +193,9 @@ def edit_user(username: str, user_in: UserEdit, db: Session = Depends(get_db), c
     if user_in.role is not None:
         db_user.role = user_in.role
         new_details["role"] = user_in.role
+    if "email" in user_in.model_fields_set:
+        db_user.email = str(user_in.email) if user_in.email else None
+        new_details["recovery_email_changed"] = True
     if user_in.password is not None:
         db_user.password = generate_password_hash(user_in.password)
         new_details["password_changed"] = True

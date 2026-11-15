@@ -112,9 +112,13 @@ test("model replay, file download/recovery, website checks and audit work togeth
   try {
     await navigate(page, "Website checks");
     await page.getByLabel("Website URLs or hostnames").fill("127.0.0.1");
-    await page.getByLabel("I own or have permission to assess these sites").check();
-    await page.getByRole("button", {name: "Save approved websites"}).click();
-    await expect(page.getByRole("status")).toContainText("Approved websites updated");
+    await page
+      .getByLabel("I own or have permission to assess these sites")
+      .check();
+    await page.getByRole("button", { name: "Save approved websites" }).click();
+    await expect(page.getByRole("status")).toContainText(
+      "Approved websites updated",
+    );
     await page
       .getByLabel("Target URL")
       .fill(`http://127.0.0.1:${fixture.address().port}`);
@@ -392,4 +396,79 @@ test("separate customer sessions see only their own workspace files and accounts
   } finally {
     await otherContext.close();
   }
+});
+
+test("password recovery removes the link token, validates confirmation and signs out old sessions", async ({
+  page,
+  request,
+}) => {
+  const old = await request.post("/api/auth/login", {
+    form: { username: "reset-fixture", password: "isolated-old-password" },
+  });
+  const oldToken = (await old.json()).access_token;
+  await page.goto(
+    "/#reset-password?token=isolated-browser-reset-token-never-for-production-123456",
+  );
+  await expect(
+    page.getByRole("heading", { name: "Choose a new password." }),
+  ).toBeVisible();
+  await expect(page).not.toHaveURL(/token=/);
+  await page
+    .getByLabel("New password", { exact: true })
+    .fill("a-new-browser-password");
+  await page
+    .getByLabel("Confirm new password", { exact: true })
+    .fill("mismatched-password");
+  await page
+    .getByRole("button", { name: "Update password", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("do not match");
+  await page
+    .getByLabel("Confirm new password", { exact: true })
+    .fill("a-new-browser-password");
+  await page
+    .getByRole("button", { name: "Update password", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Welcome back." }),
+  ).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("Password updated");
+  expect(
+    (
+      await request.get("/api/auth/me", {
+        headers: { Authorization: "Bearer " + oldToken },
+      })
+    ).status(),
+  ).toBe(401);
+  await page.getByLabel("Username", { exact: true }).fill("reset-fixture");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("a-new-browser-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Workspace overview", exact: true }),
+  ).toBeVisible();
+  await page.goto(
+    "/#reset-password?token=isolated-browser-reset-token-never-for-production-123456",
+  );
+  await page
+    .getByLabel("New password", { exact: true })
+    .fill("another-browser-password");
+  await page
+    .getByLabel("Confirm new password", { exact: true })
+    .fill("another-browser-password");
+  await page
+    .getByRole("button", { name: "Update password", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("already used");
+  await page.getByRole("button", { name: "Request a new reset link" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Forgot your password?" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Email recovery is unavailable.", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Send reset link" }),
+  ).toBeDisabled();
 });
