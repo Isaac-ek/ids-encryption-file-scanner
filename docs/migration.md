@@ -1,6 +1,6 @@
 # Consolidation and migration
 
-Primary destination: `Isaac-ek/ids-encryption-file-scanner`. The other repository remains intact as source history; this change does not delete a GitHub repository or local checkout.
+One maintained repository: `Isaac-ek/ids-encryption-file-scanner`. The standalone website app has been consolidated into it. The original website-scanner source history is preserved under `archive/vulnerability-scanner/branches/main`; the redundant repository and local checkout can be removed without losing that source history.
 
 The React/FastAPI rewrite supplies the shared shell, authentication, file controls and audit chain. The website engine is imported under `web_scanner/` and `scanner_utils/` to avoid name collisions. The old Flask templates/entrypoints, obsolete UI components, duplicated nginx frontend deployment and default-credential seeding path are removed from the combined tree. Training scripts, packet feature extraction and both classifier approaches are retained.
 
@@ -15,3 +15,5 @@ Run `python scripts/init_db.py` to create `scan_runs` (and any other missing tab
 Keep `.runtime/keys` with the encrypted files during backups. Losing keys makes recovery impossible. Current storage keys are protected by filesystem permissions; this prototype is not a KMS/HSM deployment. Limit deployment access accordingly.
 
 Existing audit entries retain their format. New scan/prediction/file operations append to the same chain. The website service uses one scan slot per API process and a 25-second request budget; run one API process for the default SQLite deployment. Multi-process deployments should add a shared job queue/rate-limit before increasing public throughput.
+
+The permanent combined checkout is `Downloads/scanner`. Existing local keys, encrypted files, logs and `.env` remain local. Legacy account YAML files are retained privately under `.runtime/legacy-accounts` and are not imported as active accounts automatically.
