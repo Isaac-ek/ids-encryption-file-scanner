@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+import joblib
+import os
+import numpy as np
+from config import MODEL_DIR
+from sklearn.metrics import classification_report, confusion_matrix
+from ids_features import (
+    CLASS_NAMES,
+    FEATURE_COLUMNS_FILENAME,
+    PRIMARY_MODEL_FILENAME,
+    SCALER_FILENAME,
+    SPECIALIST_CONFIG_FILENAME,
+    SPECIALIST_MODEL_FILENAME,
+    build_feature_frame,
+    combine_predictions,
+    load_dataset,
+)
+
+model = joblib.load(os.path.join(MODEL_DIR, PRIMARY_MODEL_FILENAME))
+specialist = joblib.load(os.path.join(MODEL_DIR, SPECIALIST_MODEL_FILENAME))
+scaler = joblib.load(os.path.join(MODEL_DIR, SCALER_FILENAME))
+feature_columns = joblib.load(os.path.join(MODEL_DIR, FEATURE_COLUMNS_FILENAME))
+specialist_config = joblib.load(os.path.join(MODEL_DIR, SPECIALIST_CONFIG_FILENAME))
+
+df_test = load_dataset("NSL_KDD_Test.csv")
+keep_classes = [0, 1, 2, 3]
+df_test = df_test[df_test["label"].isin(keep_classes)].copy()
+
+print("Test data distribution:")
+print(df_test['label'].value_counts().sort_index())
+print()
+
+Y_test = df_test["label"].to_numpy(dtype=int)
+df_test_full = build_feature_frame(df_test, feature_columns=feature_columns)
+X_test = df_test_full[feature_columns].to_numpy(dtype=np.float32)
+
+X_test_scaled = scaler.transform(X_test)
+primary_pred = model.predict(X_test_scaled)
+primary_proba = model.predict_proba(X_test_scaled)
+specialist_pred = specialist.predict(X_test_scaled)
+specialist_proba = specialist.predict_proba(X_test_scaled)
+y_pred = combine_predictions(
+    primary_pred=primary_pred,
+    primary_proba=primary_proba,
+    specialist_pred=specialist_pred,
+    specialist_proba=specialist_proba,
+    specialist_config=specialist_config,
+)
+
+print("Model performance on test data:")
+print("=" * 50)
+print(classification_report(Y_test, y_pred, labels=keep_classes, target_names=CLASS_NAMES[:4], zero_division=0))
+print()
+
+print("Confusion Matrix:")
+print(confusion_matrix(Y_test, y_pred, labels=keep_classes))
+print()
+
+# Check some specific examples
+print("Sample predictions from test data:")
+print("=" * 50)
+for i in range(10):
+    true_label = Y_test[i]
+    pred_label = y_pred[i]
+    true_name = CLASS_NAMES[true_label]
+    pred_name = CLASS_NAMES[pred_label]
+
+    # Get some key features
+    duration = df_test.iloc[i]['duration']
+    src_bytes = df_test.iloc[i]['src_bytes']
+    serror_rate = df_test.iloc[i]['serror_rate']
+    num_failed_logins = df_test.iloc[i]['num_failed_logins']
+
+    print(f"Sample {i+1}: True={true_name}, Pred={pred_name}")
+    print(f"  Features: duration={duration:.2f}, src_bytes={src_bytes:.2f}, serror_rate={serror_rate:.2f}, failed_logins={num_failed_logins}")
+    print()

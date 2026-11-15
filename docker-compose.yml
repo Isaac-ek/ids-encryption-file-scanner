@@ -1,0 +1,15 @@
+services:
+  security:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      WORKER_TOKEN: ${WORKER_TOKEN:?Set WORKER_TOKEN}
+      SCAN_ALLOWED_HOSTS: ${SCAN_ALLOWED_HOSTS:-}
+      SECURITY_DATA_DIR: /app/.runtime
+      IDS_AUTO_ENCRYPT: "false"
+    volumes:
+      - security-data:/app/.runtime
+volumes:
+  security-data:

@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+!.env.example
+.venv*
+**/node_modules
+**/__pycache__
+.runtime
+keys
+quarantine
+sensitive_data
+logs
+dataset
+**/test-results
+**/playwright-report
