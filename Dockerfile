@@ -19,7 +19,7 @@ COPY scripts ./scripts
 COPY models2 ./models2
 COPY examples ./examples
 COPY --from=interface /frontend/dist ./frontend/dist
-RUN useradd --create-home operator && mkdir -p /app/.runtime && chown operator:operator /app/.runtime
-USER operator
+RUN useradd --user-group --create-home securestream && mkdir -p /app/.runtime && chown securestream:securestream /app/.runtime
+USER securestream
 EXPOSE 8000
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
