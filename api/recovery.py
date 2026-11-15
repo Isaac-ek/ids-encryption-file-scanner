@@ -60,6 +60,8 @@ def mail_sender():
 
 
 def delivery_ready():
+    if os.getenv("PASSWORD_RECOVERY_ENABLED", "false").lower() != "true":
+        return False
     try:
         reset_origin(); mail_sender()
         return bool(os.getenv("RESEND_API_KEY"))

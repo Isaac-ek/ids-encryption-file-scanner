@@ -43,7 +43,7 @@ Workspace administrators can manage exact approved hostnames under **Website che
 
 ## Password recovery
 
-Connect Resend to Preview and Production, verify the sending domain, and retain its `RESEND_API_KEY` and `RESEND_EMAIL_DOMAIN` as server-only settings. Set `PASSWORD_RESET_ORIGIN` to the public production origin. Preview links use that deployment's `VERCEL_URL` unless explicitly overridden, so previews retain their access protection. The API never builds reset links from request headers.
+Connect Resend to Preview and Production, verify a custom domain whose DNS you control, and retain its `RESEND_API_KEY` and `RESEND_EMAIL_DOMAIN` as server-only settings. Set `PASSWORD_RESET_ORIGIN` to the public production origin. Preview links use that deployment's `VERCEL_URL` unless explicitly overridden, so previews retain their access protection. The API never builds reset links from request headers. Set `PASSWORD_RECOVERY_ENABLED=true` only after domain verification and a real delivery test. It defaults to false, so connecting credentials alone does not advertise a working recovery service. A Vercel app subdomain cannot serve as your verified email domain.
 
 Provide `BOOTSTRAP_EMAIL` when creating an administrator, or set a member's **Recovery email** through People & access. Confirm ownership before assigning an address. Email changes require an authenticated workspace administrator; members cannot change another account's recovery address. Existing accounts without an address can still have passwords reset by their administrator.
 

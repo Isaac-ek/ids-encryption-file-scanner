@@ -10,6 +10,7 @@ NEW = "a-different-strong-password"
 
 @pytest.fixture
 def mail(client, monkeypatch):
+    monkeypatch.setenv("PASSWORD_RECOVERY_ENABLED", "true")
     monkeypatch.setenv("RESEND_API_KEY", "test-key-used-only-by-mocked-http")
     monkeypatch.setenv("RESEND_EMAIL_DOMAIN", "mail.example.com")
     monkeypatch.setenv("PASSWORD_RESET_ORIGIN", "https://security.example.com")
@@ -123,6 +124,8 @@ def test_email_permissions_validation_and_unconfigured_delivery(client, auth, mo
     assert client.put("/api/auth/users/owner",headers=auth,json={"email":"Owner@EXAMPLE.COM"}).json()["email"] == ADDRESS
     assert client.put("/api/auth/users/owner",headers=auth,json={"name":"New name"}).json()["email"] == ADDRESS
     assert client.put("/api/auth/users/owner",headers=auth,json={"email":""}).json()["email"] is None
+    monkeypatch.setenv("PASSWORD_RECOVERY_ENABLED", "false")
+    assert client.get("/api/auth/recovery-status").json() == {"available":False}
     monkeypatch.setenv("VERCEL","1");monkeypatch.setenv("PASSWORD_RESET_ORIGIN","http://localhost:8182")
     with pytest.raises(ValueError): recovery.reset_origin()
 
