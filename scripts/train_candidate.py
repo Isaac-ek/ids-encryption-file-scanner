@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
-from xgboost import XGBClassifier
+from xgboost import XGBClassifier, __version__ as xgboost_version
 from api.settings import ROOT, MODEL_ROOT
 from legacy.ids_features import COL_NAMES, LABEL_MAP, CLASS_NAMES, CATEGORICAL_COLS
 
@@ -87,7 +87,7 @@ def train(output):
               "training_sha256": sha(train_path), "dataset": test_path.name, "dataset_sha256": sha(test_path), "records": len(test), "bundle_sha256": {p.name: sha(p) for p in output.glob("*.joblib")},
               "validation_candidates": [{"name": n, **m} for n, _, m in candidates], "metrics": test_metrics,
               "release_gates": gates, "eligible_for_promotion": all(gates.values()), "promoted": False,
-              "environment": {"python": platform.python_version(), "libraries": {n: version(n) for n in ["scikit-learn", "xgboost", "numpy", "pandas"]}},
+              "environment": {"python": platform.python_version(), "libraries": {n: xgboost_version if n == "xgboost" else version(n) for n in ["scikit-learn", "xgboost", "numpy", "pandas"]}},
               "limitations": ["Offline NSL-KDD measurement; not evidence of live-network effectiveness.", "A previously inspected test set is not a new untouched real-world holdout.", "No hyperparameters or thresholds were selected using test results."]}
     (output / "evaluation.json").write_text(json.dumps(report, indent=2))
     print(json.dumps({"selected": name, "macro_f1": test_metrics["macro_f1"], "gates": gates, "promoted": False}), flush=True)

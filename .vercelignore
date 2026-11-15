@@ -1,0 +1,17 @@
+# Private local state is never a deployment input.
+.env
+.env.*
+.runtime/
+keys/
+logs/
+quarantine/
+sensitive_data/
+.venv/
+.venv312/
+venv/
+**/__pycache__/
+**/node_modules/
+**/test-results/
+**/playwright-report/
+dataset/
+.git/
