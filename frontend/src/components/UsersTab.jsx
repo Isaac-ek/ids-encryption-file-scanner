@@ -178,6 +178,20 @@ export default function UsersTab({
               </label>
             )}
             <label>
+              Recovery email (optional)
+              <input
+                name="email"
+                type="email"
+                defaultValue={editing.email || ""}
+                maxLength={254}
+                autoComplete="email"
+              />
+              <span className="field-help">
+                Password-reset links are sent to this address. Confirm it
+                belongs to this member.
+              </span>
+            </label>
+            <label>
               Access level
               <select
                 name="role"
@@ -328,6 +342,10 @@ export function AccountDialog({
           </p>
         </div>
       </div>
+      <p className="muted">
+        Recovery email: {user.email || "Not set"}. Your workspace administrator
+        can update this in People &amp; access.
+      </p>
       <form
         onSubmit={(event) => {
           event.preventDefault();

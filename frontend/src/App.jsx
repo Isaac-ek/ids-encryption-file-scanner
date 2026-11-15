@@ -17,6 +17,7 @@ import {
   Database,
   BarChart3,
 } from "lucide-react";
+import AuthForms from "./components/AuthForms";
 import EncryptedFilesTab from "./components/EncryptedFilesTab";
 import ActiveRulesTab from "./components/ActiveRulesTab";
 import UsersTab, { AccountDialog } from "./components/UsersTab";
@@ -106,6 +107,7 @@ const emptyData = () => ({
   samples: [],
   events: null,
   scans: [],
+  scanScope: null,
   fileChecks: [],
   scannerStatus: null,
   users: [],
@@ -116,7 +118,18 @@ const queryString = (object) =>
   new URLSearchParams(
     Object.entries(object).filter(([, value]) => value !== "" && value != null),
   ).toString();
+function takeResetToken() {
+  if (!location.hash.startsWith("#reset-password")) return "";
+  const value =
+    new URLSearchParams(location.hash.split("?")[1] || "").get("token") ||
+    "invalid";
+  history.replaceState(null, "", location.pathname + location.search);
+  return value;
+}
+// Read and remove the fragment before rendering or loading account data.
+const initialResetToken = takeResetToken();
 export default function App() {
+  const [resetToken, setResetToken] = useState(initialResetToken);
   const [token, setToken] = useState(
     () => sessionStorage.getItem("securestream-token") || "",
   );
@@ -223,6 +236,11 @@ export default function App() {
   }, []);
   useEffect(() => {
     const handler = () => {
+      if (location.hash.startsWith("#reset-password")) {
+        setResetToken(takeResetToken());
+        setNotice(null);
+        return;
+      }
       const id = location.hash.slice(1);
       setTab(pages.some((page) => page.id === id) ? id : "overview");
       setNotice(null);
@@ -233,7 +251,11 @@ export default function App() {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    api("/health").then((value) => { if (!cancelled) setRuntime(value); }).catch(() => {});
+    api("/health")
+      .then((value) => {
+        if (!cancelled) setRuntime(value);
+      })
+      .catch(() => {});
     api("/auth/me")
       .then((account) => {
         if (!cancelled) setUser(account);
@@ -268,8 +290,11 @@ export default function App() {
         const events = await api("/workspace/events?" + eventQuery);
         setData((old) => ({ ...old, events }));
       } else if (tab === "web") {
-        const scans = await api("/scans");
-        setData((old) => ({ ...old, scans }));
+        const [scans, scanScope] = await Promise.all([
+          api("/scans"),
+          api("/scans/scope"),
+        ]);
+        setData((old) => ({ ...old, scans, scanScope }));
       } else if (tab === "files") {
         const files = await api("/encryption/files");
         setData((old) => ({ ...old, files }));
@@ -304,7 +329,9 @@ export default function App() {
     if (!token || !user || !runtime) return;
     if (runtime.event_updates === "polling") {
       setConnection("Synced every 15s");
-      const sync = () => { if (!document.hidden) setRevision((old) => old + 1); };
+      const sync = () => {
+        if (!document.hidden) setRevision((old) => old + 1);
+      };
       const interval = setInterval(sync, 15000);
       document.addEventListener("visibilitychange", sync);
       return () => {
@@ -415,7 +442,7 @@ export default function App() {
   }
   const current = pages.find((page) => page.id === tab) || pages[0];
   const visible = pages.filter((page) => !page.admin || user?.role === "admin");
-  if (!token || !user)
+  if (resetToken || !token || !user)
     return (
       <div className="login-layout">
         <aside className="login-story">
@@ -456,58 +483,20 @@ export default function App() {
             <div className="login-mobile-brand">
               <Brand />
             </div>
-            <span className="eyebrow">Workspace access</span>
-            <h2>Welcome back.</h2>
-            <p className="muted">Sign in with your workspace account.</p>
-            {notice && (
-              <div className="notice error" role="alert">
-                {notice.message}
-              </div>
-            )}
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const values = new FormData(event.currentTarget);
-                run(async () => {
-                  const result = await api("/auth/login", {
-                    method: "POST",
-                    body: new URLSearchParams({
-                      username: values.get("username"),
-                      password: values.get("password"),
-                    }),
-                  });
-                  setSession(result.access_token);
-                });
+            <AuthForms
+              key={resetToken || "login"}
+              api={api}
+              run={run}
+              busy={busy}
+              notice={notice}
+              notify={notify}
+              resetToken={resetToken}
+              onSession={setSession}
+              onResetDone={() => {
+                logout();
+                setResetToken("");
               }}
-            >
-              <label>
-                Username
-                <input
-                  name="username"
-                  autoComplete="username"
-                  required
-                  placeholder="Your username"
-                />
-              </label>
-              <label>
-                Password
-                <input
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  placeholder="Enter your password"
-                />
-              </label>
-              <button className="button primary" disabled={busy}>
-                {busy ? "Signing in…" : "Sign in"}
-                <ArrowUpRight size={16} />
-              </button>
-            </form>
-            <p className="login-help">
-              Need an account? Your workspace administrator can create one for
-              you.
-            </p>
+            />
           </div>
         </main>
       </div>
@@ -667,6 +656,7 @@ export default function App() {
             )}
             {tab === "web" && (
               <WebsiteTab
+                scope={data.scanScope}
                 scans={data.scans}
                 api={api}
                 run={run}
@@ -689,7 +679,9 @@ export default function App() {
             )}
             {tab === "files" && (
               <EncryptedFilesTab
-                maxUploadBytes={data.files?.max_upload_bytes || runtime?.max_upload_bytes}
+                maxUploadBytes={
+                  data.files?.max_upload_bytes || runtime?.max_upload_bytes
+                }
                 sensitiveFiles={data.files?.sensitive_files || []}
                 encryptedFiles={data.files?.encrypted_files || []}
                 busy={busy}

@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, String, Boolean, LargeBinary, UniqueCons
 
 class WorkspaceScoped:
     workspace_id = Column(Integer, nullable=False, default=1, index=True)
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator
 from typing import Optional, Dict, Any, Literal
 from api.database import Base
 
@@ -16,6 +16,7 @@ class DBUser(WorkspaceScoped, Base):
     name = Column(String, nullable=False)
     password = Column(String, nullable=False)
     role = Column(String, default="user")
+    email = Column(String, nullable=True)
 
 class DBRule(WorkspaceScoped, Base):
     __tablename__ = "rules"
@@ -51,7 +52,17 @@ class DBThreatAlert(WorkspaceScoped, Base):
 
 # ==================== Pydantic Schemas for API ====================
 
-class UserBase(BaseModel):
+class RecoveryEmail(BaseModel):
+    email: Optional[EmailStr] = None
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value):
+        if isinstance(value, str):
+            return value.strip().lower() or None
+        return value
+
+class UserBase(RecoveryEmail):
     username: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
     name: str = Field(min_length=1, max_length=100)
     role: Literal["admin", "user"] = "user"
@@ -59,7 +70,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str = Field(min_length=12, max_length=128)
 
-class UserEdit(BaseModel):
+class UserEdit(RecoveryEmail):
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     role: Optional[Literal["admin", "user"]] = None
     password: Optional[str] = Field(default=None, min_length=12, max_length=128)
@@ -152,3 +163,20 @@ class DBStoredFile(WorkspaceScoped, Base):
     # Both originals and encrypted backups are encrypted at rest.
     payload = Column(LargeBinary, nullable=False)
     size = Column(Integer, nullable=False)
+
+
+class DBPasswordReset(WorkspaceScoped, Base):
+    __tablename__ = "password_resets"
+    token_hash = Column(String, primary_key=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    auth_stamp = Column(String, nullable=False)
+    expires_at = Column(Integer, nullable=False, index=True)
+    consumed_at = Column(Integer, nullable=True)
+
+
+class DBRecoveryThrottle(Base):
+    # Global admission control stores keyed hashes, never raw usernames or IPs.
+    __tablename__ = "recovery_throttles"
+    key = Column(String, primary_key=True)
+    window_start = Column(Integer, nullable=False)
+    attempts = Column(Integer, nullable=False, default=0)

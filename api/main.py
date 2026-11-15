@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from api.recovery import router as recovery_router
 from api.auth import router as auth_router, decode_access_token, session_stamp
 from api.alerts import router as alerts_router
 from api.settings import FILE_STORAGE_BACKEND, IS_VERCEL, MAX_UPLOAD_BYTES
@@ -32,7 +33,7 @@ async def lifespan(app):
     yield
 
 app = FastAPI(title="SecureStream · IDS and Website Security", version="1.0.0", lifespan=lifespan)
-for router in [auth_router, alerts_router, encryption_router, detector_router, scans_router, workspace_router, file_checks_router]:
+for router in [auth_router, recovery_router, alerts_router, encryption_router, detector_router, scans_router, workspace_router, file_checks_router]:
     app.include_router(router)
 
 @app.get("/api/health")
@@ -71,4 +72,4 @@ FRONTEND = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 if FRONTEND.exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND / "assets"), name="assets")
     @app.get("/", include_in_schema=False)
-    def interface(): return FileResponse(FRONTEND / "index.html")
+    def interface(): return FileResponse(FRONTEND / "index.html", headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})

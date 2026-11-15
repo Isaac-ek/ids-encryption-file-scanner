@@ -4,6 +4,7 @@ import re
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from pydantic import TypeAdapter, EmailStr
 from werkzeug.security import generate_password_hash
 from api.database import Base, engine, SessionLocal
 from api.models import DBWorkspace, DBUser, DBScanRun, DBRule, DBAuditLog, DBThreatAlert
@@ -27,6 +28,6 @@ if __name__ == "__main__":
             db.add(workspace); db.flush()
         if os.getenv("BOOTSTRAP_SCAN_ALLOWED_HOSTS"):
             workspace.scan_allowed_hosts = os.environ["BOOTSTRAP_SCAN_ALLOWED_HOSTS"]
-        db.add(DBUser(workspace_id=workspace.id,username=username, name="Security operator", password=generate_password_hash(password), role="admin"))
+        db.add(DBUser(workspace_id=workspace.id,username=username, name="Security operator", password=generate_password_hash(password), role="admin", email=(str(TypeAdapter(EmailStr).validate_python(os.environ["BOOTSTRAP_EMAIL"])).lower() if os.getenv("BOOTSTRAP_EMAIL") else None)))
         db.commit()
     print("Administrator created")

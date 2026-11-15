@@ -46,6 +46,8 @@ def initialize_database(engine, base):
             connection.execute(text(f'CREATE INDEX IF NOT EXISTS ix_{table}_workspace_id ON {table} (workspace_id)'))
         if "scan_allowed_hosts" not in {c["name"] for c in tables.get_columns("workspaces")}:
             connection.execute(text("ALTER TABLE workspaces ADD COLUMN scan_allowed_hosts VARCHAR NOT NULL DEFAULT ''"))
+        if "email" not in {c["name"] for c in tables.get_columns("users")}:
+            connection.execute(text("ALTER TABLE users ADD COLUMN email VARCHAR"))
         inserted = connection.execute(text("INSERT INTO workspaces (id, slug, name, scan_allowed_hosts) SELECT 1, 'main', 'Main workspace', '' WHERE NOT EXISTS (SELECT 1 FROM workspaces WHERE id = 1)"))
 
         if connection.dialect.name == "postgresql" and inserted.rowcount:
