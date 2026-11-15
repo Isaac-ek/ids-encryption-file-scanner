@@ -326,6 +326,7 @@ export function EventsTab({
   );
 }
 export function WebsiteTab({
+  scope,
   scans,
   api,
   run,
@@ -423,10 +424,28 @@ export function WebsiteTab({
             </p>
           )}
           <p className="footnote">
-            The hostname must be in the workspace's configured scan scope.
-            Findings are observations to investigate, not proof of an
-            exploitable vulnerability.
+            Findings are observations to investigate. Approve each hostname below, including any hostname a site redirects to.
           </p>
+          <details className="advanced-options" open={!scope?.effective_hostnames?.length}>
+            <summary>Approved websites <span className="count">{scope?.effective_hostnames?.length || 0}</span></summary>
+            <div className="advanced-body">
+              <p className="muted text-small">Add sites you own or have permission to assess. Approval covers the exact hostname; subdomains are separate.</p>
+              {scope?.effective_hostnames?.length ? <ul>{scope.effective_hostnames.map((host) => <li key={host} className="mono">{host}</li>)}</ul> : <p className="inline-note">Approve a website here before your first check.</p>}
+              {canManage && <form key={scope?.hostnames?.join(",") || "empty"} onSubmit={(event) => {
+                event.preventDefault();
+                const fields = new FormData(event.currentTarget);
+                run(async () => {
+                  await api("/scans/scope", {method: "PUT", json: {hostnames: String(fields.get("hostnames") || "").split(/[\s,]+/).filter(Boolean), authorized: fields.has("scope_authorized")}});
+                  await refresh();
+                  notify("Approved websites updated.");
+                });
+              }}>
+                <label>Website URLs or hostnames<textarea name="hostnames" rows={3} defaultValue={scope?.hostnames?.join("\n") || ""} placeholder="your-domain.com&#10;www.your-domain.com" maxLength={8000} /></label>
+                <label className="check-label"><input name="scope_authorized" type="checkbox" required />I own or have permission to assess these sites</label>
+                <button className="button secondary" disabled={busy || !scope}>Save approved websites</button>
+              </form>}
+            </div>
+          </details>
         </section>
         <section className="panel">
           <div className="panel-heading">

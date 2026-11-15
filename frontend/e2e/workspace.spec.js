@@ -111,6 +111,10 @@ test("model replay, file download/recovery, website checks and audit work togeth
   await once(fixture, "listening");
   try {
     await navigate(page, "Website checks");
+    await page.getByLabel("Website URLs or hostnames").fill("127.0.0.1");
+    await page.getByLabel("I own or have permission to assess these sites").check();
+    await page.getByRole("button", {name: "Save approved websites"}).click();
+    await expect(page.getByRole("status")).toContainText("Approved websites updated");
     await page
       .getByLabel("Target URL")
       .fill(`http://127.0.0.1:${fixture.address().port}`);

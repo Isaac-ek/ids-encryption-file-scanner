@@ -35,6 +35,64 @@ def serialize(run):
 def history(db: Session = Depends(get_db), user: DBUser = Depends(get_current_user)):
     return [serialize(run) for run in db.query(DBScanRun).order_by(DBScanRun.id.desc()).limit(30)]
 
+
+class ScanScope(BaseModel):
+    hostnames: list[str] = Field(default_factory=list, max_length=30)
+    authorized: bool = False
+
+
+def configured_hosts(workspace, user):
+    import os
+    hosts = {h.strip() for h in (workspace.scan_allowed_hosts or "").split(",") if h.strip()}
+    if user.workspace_id == 1:
+        hosts.update(h.strip() for h in os.getenv("SCAN_ALLOWED_HOSTS", "").split(",") if h.strip())
+    return sorted(hosts)
+
+
+def normalize_scope_host(value):
+    import ipaddress
+    import os
+    import re
+    from urllib.parse import urlsplit
+    value = value.strip()
+    if not value or len(value) > 2000:
+        raise HTTPException(422, "Enter a hostname or an HTTP/HTTPS website URL")
+    try:
+        parsed = urlsplit(value if "://" in value else "https://" + value)
+        if parsed.scheme not in {"http", "https"} or parsed.username or parsed.password or not parsed.hostname or parsed.port not in {None, 80, 443}:
+            raise ValueError()
+        host = parsed.hostname.rstrip(".").encode("idna").decode().lower()
+        fixture = os.getenv("SCAN_ALLOW_LOCALHOST") == "true" and host in {"localhost", "127.0.0.1", "::1"}
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            if len(host) > 253 or not all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label) for label in host.split(".")) or ("." not in host and not fixture):
+                raise ValueError()
+        else:
+            if (not address.is_global or address.is_multicast) and not fixture:
+                raise ValueError()
+    except (ValueError, UnicodeError):
+        raise HTTPException(422, "Use a public hostname or website URL without credentials, wildcards, or custom ports") from None
+    return host
+
+
+@router.get("/scope")
+def get_scope(db: Session = Depends(get_db), user: DBUser = Depends(get_current_user)):
+    workspace = db.query(DBWorkspace).filter(DBWorkspace.id == user.workspace_id).one()
+    return {"hostnames": sorted(h for h in (workspace.scan_allowed_hosts or "").split(",") if h), "effective_hostnames": configured_hosts(workspace, user)}
+
+
+@router.put("/scope")
+def set_scope(payload: ScanScope, db: Session = Depends(get_db), user: DBUser = Depends(require_admin)):
+    if not payload.authorized:
+        raise HTTPException(422, "Confirm you own or have permission to assess these sites")
+    hosts = sorted({normalize_scope_host(value) for value in payload.hostnames})
+    workspace = db.query(DBWorkspace).filter(DBWorkspace.id == user.workspace_id).one()
+    previous = workspace.scan_allowed_hosts
+    workspace.scan_allowed_hosts = ",".join(hosts)
+    log_audit(db, user.username, "update_scan_scope", None, {"previous": previous.split(",") if previous else [], "hostnames": hosts})
+    return {"hostnames": hosts, "effective_hostnames": configured_hosts(workspace, user)}
+
 def _run_scan(payload: ScanRequest, db: Session, user: DBUser):
     if not payload.authorized: raise HTTPException(422, "Confirm you are authorized to check this target")
     try: target, address, port = resolve_target(payload.url)

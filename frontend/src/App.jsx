@@ -106,6 +106,7 @@ const emptyData = () => ({
   samples: [],
   events: null,
   scans: [],
+  scanScope: null,
   fileChecks: [],
   scannerStatus: null,
   users: [],
@@ -268,8 +269,8 @@ export default function App() {
         const events = await api("/workspace/events?" + eventQuery);
         setData((old) => ({ ...old, events }));
       } else if (tab === "web") {
-        const scans = await api("/scans");
-        setData((old) => ({ ...old, scans }));
+        const [scans, scanScope] = await Promise.all([api("/scans"), api("/scans/scope")]);
+        setData((old) => ({ ...old, scans, scanScope }));
       } else if (tab === "files") {
         const files = await api("/encryption/files");
         setData((old) => ({ ...old, files }));
@@ -667,6 +668,7 @@ export default function App() {
             )}
             {tab === "web" && (
               <WebsiteTab
+                scope={data.scanScope}
                 scans={data.scans}
                 api={api}
                 run={run}

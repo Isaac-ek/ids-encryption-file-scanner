@@ -20,10 +20,10 @@ def resolve_target(url):
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
         raise TargetDenied("Use an http(s) URL without embedded credentials")
-    host = parsed.hostname.lower().rstrip('.')
+    host = parsed.hostname.rstrip('.').encode("idna").decode().lower()
     allowed = {name.strip().lower().rstrip('.') for name in (allowed_hosts.get() if allowed_hosts.get() is not None else os.getenv("SCAN_ALLOWED_HOSTS", "")).split(',') if name.strip()}
     if host not in allowed:
-        raise TargetDenied("Target hostname is not in SCAN_ALLOWED_HOSTS")
+        raise TargetDenied("This hostname is not approved for your workspace. Add it under Approved websites before running the check.")
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     fixture_host = os.getenv("SCAN_ALLOW_LOCALHOST") == "true" and host in {"localhost", "127.0.0.1", "::1"}
     if port not in {80, 443} and not fixture_host:

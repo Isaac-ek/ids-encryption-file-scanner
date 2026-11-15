@@ -29,7 +29,7 @@ export default defineConfig({
       WORKER_TOKEN: "isolated-browser-worker-secret-not-for-production-12345",
       BOOTSTRAP_USERNAME: "browser-owner",
       BOOTSTRAP_PASSWORD: "isolated-browser-password",
-      SCAN_ALLOWED_HOSTS: "127.0.0.1",
+      SCAN_ALLOWED_HOSTS: "",
       SCAN_ALLOW_LOCALHOST: "true",
     },
   },
