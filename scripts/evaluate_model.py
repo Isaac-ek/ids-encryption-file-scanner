@@ -5,6 +5,7 @@ import hashlib
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import pandas as pd
+from xgboost import __version__ as xgboost_version
 from sklearn.metrics import classification_report,confusion_matrix,accuracy_score,balanced_accuracy_score
 from api.ids_runtime import bundle, artifact_hashes
 from api.settings import ROOT,MODEL_ROOT
@@ -23,6 +24,6 @@ if __name__=='__main__':
     import platform
     from importlib.metadata import version
     report['bundle_sha256']=artifact_hashes()
-    report['environment']={'python':platform.python_version(),'platform':platform.system(),'libraries':{name:version(name) for name in ['scikit-learn','xgboost','numpy','pandas']}}
+    report['environment']={'python':platform.python_version(),'platform':platform.system(),'libraries':{name:xgboost_version if name == 'xgboost' else version(name) for name in ['scikit-learn','xgboost','numpy','pandas']}}
     (MODEL_ROOT/'evaluation.json').write_text(json.dumps(report,indent=2))
     print(json.dumps({'model_type':report['model_type'],'records':report['records'],'accuracy':report['metrics']['accuracy'],'macro_f1':report['metrics']['classification']['macro avg']['f1-score']}))

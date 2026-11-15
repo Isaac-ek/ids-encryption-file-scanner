@@ -37,3 +37,10 @@ def sample(user: DBUser = Depends(get_current_user)):
     import json
     from api.settings import ROOT
     return json.loads((ROOT / "examples" / "connection.json").read_text())
+
+
+@router.get("/samples")
+def sample_cases(user: DBUser = Depends(get_current_user)):
+    import json
+    from api.settings import ROOT
+    return json.loads((ROOT / "examples" / "connection-cases.json").read_text())

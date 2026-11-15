@@ -13,7 +13,9 @@ numpy>=1.26
 pandas>=2.2
 joblib>=1.4
 scikit-learn==1.6.1
-xgboost==3.0.2
+# Linux hosting uses the matching CPU wheel; macOS/other platforms retain the standard package.
+xgboost-cpu==3.0.2; platform_system == "Linux" and platform_machine == "x86_64"
+xgboost==3.0.2; platform_system != "Linux" or platform_machine != "x86_64"
 celery[redis]>=5.4,<6
 redis>=5,<7
 scapy>=2.6

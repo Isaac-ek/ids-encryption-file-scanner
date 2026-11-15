@@ -5,6 +5,7 @@ One authenticated security workspace combining the trained intrusion detector fr
 - **Events:** inspect persisted sensor events and run supplied connection features through the existing trained model. Replays are labelled `model-replay` and never presented as live capture.
 - **Website checks:** run scoped HTTP/TLS/header, CORS, redirect, keyword, mixed-content and optional common-path/TCP/reflected-GET checks. Reports persist and link to the shared audit history.
 - **Files:** upload, preview, encrypt and restore files using AES-256-GCM. Restores return SHA-256 and retain the encrypted backup.
+- **People and controls:** provision user logins, manage roles and passwords, edit detection rules, filter/export events, inspect files with optional local ClamAV, and review model metrics. See [feature coverage](docs/feature-coverage.md) for workflow boundaries.
 - **Audit:** verify the stored hash chain and inspect user actions. A valid chain is not an externally signed or immutable ledger.
 
 The current bundled classifier is **XGBoost**. Its model, scaler and feature-column artifacts are preserved, not retrained. The Random Forest and XGBoost training sources remain available. The interface reads model identity from the loaded object and only shows an evaluation whose model hash matches.
@@ -37,14 +38,14 @@ To capture your own authorized interface, run the sensor on the host with the re
 
 ```sh
 export API_URL=http://127.0.0.1:8000
-.venv/bin/python scripts/run_monitor.py --interface en0
+.venv/bin/python scripts/run_monitor.py --interface en0 --allow-experimental-features
 ```
 
-It uses the existing NSL-KDD feature extractor and saved detector. `--simulate` generates sample features, labels them as sensor simulation, and keeps actual model predictions. It does not force results to match the generated attack label. Automatic directory encryption is off by default and rejected in simulation mode. Live capture is not launched by opening the dashboard or running a website check. Validate the feature extraction against real traffic before interpreting offline benchmark performance as live-network effectiveness.
+It uses the bounded bidirectional flow extractor and preserved saved detector. `--simulate` replays raw sample connection features, labels them as sensor simulation, and keeps actual model predictions. Dataset labels never override predictions. Automatic directory encryption is disabled. Live capture is not launched by opening the dashboard or running a website check. Validate the feature extraction against real traffic before interpreting offline benchmark performance as live-network effectiveness.
 
 The worker API requires `X-Worker-Token`; browser bearer tokens cannot ingest sensor alerts. Use the same `WORKER_TOKEN` in API and sensor processes.
 
-The optional legacy automatic-encryption setting creates backups and retains originals. The authenticated Files workflow is the supported way to remove a plaintext copy after a durable encrypted copy has been saved and audited.
+Automatic sensor-driven directory encryption is disabled; the sensor does not modify customer files. The authenticated Files workflow is the supported way to remove a plaintext copy after a durable encrypted copy has been saved and audited.
 
 ## Verification
 
@@ -59,6 +60,8 @@ Tests use a fresh temporary database, temporary sample files and a local owned H
 
 ## Deployment
 
-`docker compose up --build` runs one container with one persistent volume. Set `JWT_SECRET` and `WORKER_TOKEN` first. Create an administrator with `docker compose exec -e BOOTSTRAP_PASSWORD=... security python scripts/create_admin.py`. Put HTTPS in front of the app. The container serves the web app; packet capture remains a separately configured host sensor. The old split Flask/Vercel and nginx UI entrypoints were removed.
+`docker compose up --build` runs one container with one persistent volume. Set `JWT_SECRET` and `WORKER_TOKEN` first. Create an administrator with `docker compose exec -e BOOTSTRAP_PASSWORD=... security python scripts/create_admin.py`. Put HTTPS in front of the app. The container serves the web app; packet capture remains a separately configured host sensor. The old split Flask and nginx UI entrypoints were removed.
 
-A new installation uses SQLite with a single API process. PostgreSQL is supported via `DATABASE_URL`. Alert fan-out is currently process-local: run one API worker until a shared broadcast broker is configured. Existing FastAPI-rewrite databases need the additive migration described in `docs/migration.md`; original project folders/databases are not modified by this consolidation.
+A new local installation uses SQLite with a single API process. PostgreSQL is supported via `DATABASE_URL`. The persistent Vercel setup uses database-backed encrypted files and 15-second shared-state refresh; see [Vercel deployment](docs/vercel-deployment.md). Local WebSocket fan-out remains process-local, so use one API worker when relying on that event stream. Existing FastAPI-rewrite databases need the additive migration described in `docs/migration.md`; original project folders/databases are not modified by this consolidation.
+
+Customer provisioning and isolation: [customer workspaces](docs/customer-workspaces.md). Verified flow extraction, candidate training and remaining live-data requirements: [detector validation](docs/detector-validation.md).

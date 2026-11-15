@@ -4,7 +4,7 @@ from typing import List, Optional
 import json
 
 from api.database import get_db
-from api.models import DBRule, DBThreatAlert, DBAuditLog, RuleBase, RuleResponse, AuditLogResponse, ThreatAlertResponse
+from api.models import DBWorkspace, DBRule, DBThreatAlert, DBAuditLog, RuleBase, RuleResponse, AuditLogResponse, ThreatAlertResponse
 from api.auth import get_current_user, require_admin, DBUser
 from api.audit import verify_audit_log, log_audit
 from api.websocket_manager import manager
@@ -12,10 +12,21 @@ from fastapi import Header
 import os
 import hmac
 
-def authorize_worker(x_worker_token: str = Header(default="")):
-    expected = os.getenv("WORKER_TOKEN", "")
-    if len(expected) < 32 or expected.startswith("replace-with-") or not hmac.compare_digest(x_worker_token, expected):
+def authorize_worker(x_worker_token: str = Header(default=""), db: Session = Depends(get_db)):
+    import hashlib
+    if len(x_worker_token) < 32:
         raise HTTPException(403, "Worker authentication required")
+    digest = hashlib.sha256(x_worker_token.encode()).hexdigest()
+    workspace = db.query(DBWorkspace).filter(DBWorkspace.worker_token_hash == digest).first()
+    expected = os.getenv("WORKER_TOKEN", "")
+    if workspace:
+        workspace_id = workspace.id
+    elif len(expected) >= 32 and not expected.startswith("replace-with-") and hmac.compare_digest(x_worker_token, expected):
+        workspace_id = 1  # Existing host token can only ingest into the original workspace.
+    else:
+        raise HTTPException(403, "Worker authentication required")
+    db.info["workspace_id"] = workspace_id
+    return workspace_id
 
 
 router = APIRouter(prefix="/api/alerts", tags=["Rules & Alerts"])
@@ -110,6 +121,7 @@ def get_audit_logs(
     action: Optional[str] = None,
     admin_user: Optional[str] = None,
     target_user: Optional[str] = None,
+    date: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: DBUser = Depends(require_admin)
 ):
@@ -123,7 +135,9 @@ def get_audit_logs(
     if target_user:
         query = query.filter(DBAuditLog.target_user == target_user)
 
-    logs = query.order_by(DBAuditLog.timestamp.desc()).all()
+    if date:
+        query = query.filter(DBAuditLog.timestamp.startswith(date))
+    logs = query.order_by(DBAuditLog.id.desc()).limit(500).all()
 
     return {
         "is_valid": is_valid,
@@ -165,5 +179,5 @@ async def broadcast_alert(alert_data: dict, db: Session = Depends(get_db), worke
             "source_ip": db_alert.source_ip,
             "destination_ip": db_alert.destination_ip
         }
-    })
+    }, workspace_id=worker)
     return {"status": "ok", "alert_id": db_alert.id}

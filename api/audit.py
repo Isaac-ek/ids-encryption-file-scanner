@@ -29,6 +29,8 @@ def log_audit(db: Session, admin: Optional[str], action: str, target_user: Optio
             'prev_hash': prev_hash
         }
 
+        if db.info.get("workspace_id", 1) != 1:
+            entry_dict["workspace_id"] = db.info["workspace_id"]
         entry_str = json.dumps(entry_dict, sort_keys=True)
         entry_hash = hashlib.sha256((entry_str + prev_hash).encode('utf-8')).hexdigest()
 
@@ -64,6 +66,8 @@ def verify_audit_log(db: Session) -> Tuple[bool, Optional[int]]:
             'details': entry.details,
             'prev_hash': entry.prev_hash
         }
+        if entry.workspace_id != 1:
+            entry_dict["workspace_id"] = entry.workspace_id
         entry_str = json.dumps(entry_dict, sort_keys=True)
         expected_hash = hashlib.sha256((entry_str + prev_hash).encode('utf-8')).hexdigest()
 

@@ -8,9 +8,10 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from api.auth import DBUser, require_admin, get_current_user
 from api.database import get_db
-from api.models import DBScanRun
+from api.models import DBScanRun, DBWorkspace
 from api.audit import log_audit
 from web_scanner import scanner
 from web_scanner.reporter import Reporter
@@ -34,11 +35,12 @@ def serialize(run):
 def history(db: Session = Depends(get_db), user: DBUser = Depends(get_current_user)):
     return [serialize(run) for run in db.query(DBScanRun).order_by(DBScanRun.id.desc()).limit(30)]
 
-@router.post("/run")
-def run_scan(payload: ScanRequest, db: Session = Depends(get_db), user: DBUser = Depends(require_admin)):
+def _run_scan(payload: ScanRequest, db: Session, user: DBUser):
     if not payload.authorized: raise HTTPException(422, "Confirm you are authorized to check this target")
     try: target, address, port = resolve_target(payload.url)
     except (ValueError, OSError) as error: raise HTTPException(400, str(error))
+    if db.bind.dialect.name == "postgresql" and not db.execute(text("SELECT pg_try_advisory_xact_lock(8372603, :workspace)"), {"workspace": user.workspace_id}).scalar():
+        raise HTTPException(409, "Another scan is running in this workspace; try again shortly")
     if not scan_slot.acquire(blocking=False): raise HTTPException(409, "Another scan is running; try again shortly")
     token = budget.set(time.monotonic() + 25)
     report = Reporter()
@@ -76,3 +78,18 @@ def run_scan(payload: ScanRequest, db: Session = Depends(get_db), user: DBUser =
         return serialize(run)
     finally:
         budget.reset(token); scan_slot.release()
+
+
+@router.post("/run")
+def run_scan(payload: ScanRequest, db: Session = Depends(get_db), user: DBUser = Depends(require_admin)):
+    from web_scanner.requester import allowed_hosts
+    import os
+    workspace = db.query(DBWorkspace).filter(DBWorkspace.id == user.workspace_id).one()
+    hosts = workspace.scan_allowed_hosts or ""
+    if user.workspace_id == 1:
+        hosts += "," + os.getenv("SCAN_ALLOWED_HOSTS", "")
+    token = allowed_hosts.set(hosts)
+    try:
+        return _run_scan(payload, db, user)
+    finally:
+        allowed_hosts.reset(token)

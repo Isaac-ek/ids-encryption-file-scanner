@@ -1,121 +1,322 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
+  ArrowUpRight,
+  ChevronDown,
+  FileSearch,
   Globe,
+  LayoutDashboard,
   Lock,
-  Database,
   LogOut,
+  Menu,
   RefreshCw,
-  Shield,
   Settings2,
+  Shield,
+  Users,
+  X,
+  Database,
+  BarChart3,
 } from "lucide-react";
 import EncryptedFilesTab from "./components/EncryptedFilesTab";
 import ActiveRulesTab from "./components/ActiveRulesTab";
-import PreviewModal from "./components/PreviewModal";
+import UsersTab, { AccountDialog } from "./components/UsersTab";
+import ModelTab, { RecordInspector } from "./components/ModelTab";
+import {
+  OverviewTab,
+  EventsTab,
+  WebsiteTab,
+  FileChecksTab,
+  AuditTab,
+} from "./components/WorkspaceTabs";
+import { Brand, Dialog, saveData, FeedbackContext } from "./components/ui";
 
-const sections = [
-  { id: "events", label: "Events", Icon: Activity },
-  { id: "web", label: "Website checks", Icon: Globe },
-  { id: "files", label: "Files", Icon: Lock },
-  { id: "audit", label: "Audit", Icon: Database },
+const pages = [
+  {
+    id: "overview",
+    label: "Overview",
+    title: "Workspace overview",
+    description:
+      "Recorded activity, current tools, and a place to start investigating.",
+    icon: LayoutDashboard,
+    group: "Workspace",
+  },
+  {
+    id: "events",
+    label: "Network events",
+    title: "Network events",
+    icon: Activity,
+    group: "Workspace",
+  },
+  {
+    id: "web",
+    label: "Website checks",
+    title: "Website checks",
+    icon: Globe,
+    group: "Workspace",
+  },
+  {
+    id: "files",
+    label: "Files",
+    title: "File protection",
+    icon: Lock,
+    group: "Workspace",
+  },
+  {
+    id: "scanner",
+    label: "File scanner",
+    title: "File inspection",
+    icon: FileSearch,
+    group: "Workspace",
+  },
+  {
+    id: "model",
+    label: "Model performance",
+    title: "Model performance",
+    icon: BarChart3,
+    group: "Analysis",
+  },
+  {
+    id: "users",
+    label: "Users",
+    title: "People & access",
+    icon: Users,
+    group: "Administration",
+    admin: true,
+  },
+  {
+    id: "rules",
+    label: "Rules",
+    title: "Detection rules",
+    icon: Settings2,
+    group: "Administration",
+  },
+  {
+    id: "audit",
+    label: "Audit history",
+    title: "Audit history",
+    icon: Database,
+    group: "Administration",
+    admin: true,
+  },
 ];
+const emptyData = () => ({
+  overview: null,
+  files: null,
+  model: null,
+  samples: [],
+  events: null,
+  scans: [],
+  fileChecks: [],
+  scannerStatus: null,
+  users: [],
+  rules: [],
+  audit: null,
+});
+const queryString = (object) =>
+  new URLSearchParams(
+    Object.entries(object).filter(([, value]) => value !== "" && value != null),
+  ).toString();
 export default function App() {
   const [token, setToken] = useState(
     () => sessionStorage.getItem("securestream-token") || "",
   );
-  const [user, setUser] = useState(null);
-  const [tab, setTab] = useState("events");
-  const [data, setData] = useState({
-    events: [],
-    rules: [],
-    sensitive_files: [],
-    encrypted_files: [],
-    scans: [],
-    model: null,
-    audit: null,
-  });
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [connection, setConnection] = useState("Disconnected");
-  const [preview, setPreview] = useState(null);
-  const [features, setFeatures] = useState("");
-  const [scanResult, setScanResult] = useState(null);
-  const logout = useCallback(() => {
-    sessionStorage.removeItem("securestream-token");
-    setToken("");
-    setUser(null);
-    setData({
-      events: [],
-      rules: [],
-      sensitive_files: [],
-      encrypted_files: [],
-      scans: [],
-      model: null,
-      audit: null,
-    });
-    setFeatures("");
-    setScanResult(null);
+  const [user, setUser] = useState(null),
+    [tab, setTab] = useState(() =>
+      pages.some((page) => page.id === location.hash.slice(1))
+        ? location.hash.slice(1)
+        : "overview",
+    );
+  const [data, setData] = useState(emptyData),
+    [busy, setBusy] = useState(false),
+    [loading, setLoading] = useState(false),
+    [notice, setNotice] = useState(null),
+    [connection, setConnection] = useState("Disconnected"),
+    [runtime, setRuntime] = useState(null),
+    [revision, setRevision] = useState(0);
+  const [eventFilters, setEventFilters] = useState({ page: 1 }),
+    [auditFilters, setAuditFilters] = useState({}),
+    [mobileOpen, setMobileOpen] = useState(false),
+    [profile, setProfile] = useState(false),
+    [inspector, setInspector] = useState(null),
+    [preview, setPreview] = useState(null);
+  const inFlight = useRef(false);
+  const eventQuery = queryString(eventFilters),
+    auditQuery = queryString(auditFilters);
+  const setSession = useCallback((value) => {
+    if (value) sessionStorage.setItem("securestream-token", value);
+    else sessionStorage.removeItem("securestream-token");
+    setToken(value);
   }, []);
-  const request = useCallback(
+  const logout = useCallback(() => {
+    setSession("");
+    setUser(null);
+    setData(emptyData());
+    setInspector(null);
+    setPreview(null);
+    setProfile(false);
+  }, [setSession]);
+  const notify = useCallback(
+    (message, tone = "success") => setNotice({ message, tone }),
+    [],
+  );
+  const api = useCallback(
     async (path, options = {}) => {
+      const { json, raw, ...rest } = options;
       const response = await fetch("/api" + path, {
-        ...options,
+        ...rest,
+        body: json !== undefined ? JSON.stringify(json) : rest.body,
         headers: {
-          ...options.headers,
+          ...(json !== undefined ? { "Content-Type": "application/json" } : {}),
+          ...rest.headers,
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
       });
-      if (response.status === 401) logout();
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok)
-        throw new Error(
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        const message =
           typeof body.detail === "string"
             ? body.detail
-            : `Request failed (${response.status})`,
-        );
-      return body;
+            : Array.isArray(body.detail)
+              ? body.detail
+                  .map(
+                    (item) =>
+                      `${item.loc.filter((value) => value !== "body").join(".")}: ${item.msg}`,
+                  )
+                  .join(" · ")
+              : `Request failed (${response.status})`;
+        if (
+          response.status === 401 &&
+          sessionStorage.getItem("securestream-token") === token
+        )
+          logout();
+        const error = new Error(message);
+        error.status = response.status;
+        throw error;
+      }
+      return raw ? response : response.json();
     },
     [token, logout],
   );
+  const run = useCallback(
+    async (task) => {
+      if (inFlight.current) return null;
+      inFlight.current = true;
+      setBusy(true);
+      setNotice(null);
+      try {
+        return await task();
+      } catch (error) {
+        notify(error.message, "error");
+        return null;
+      } finally {
+        inFlight.current = false;
+        setBusy(false);
+      }
+    },
+    [notify],
+  );
+  const go = useCallback((id) => {
+    location.hash = id;
+    setTab(id);
+    setMobileOpen(false);
+    setNotice(null);
+  }, []);
+  useEffect(() => {
+    const handler = () => {
+      const id = location.hash.slice(1);
+      setTab(pages.some((page) => page.id === id) ? id : "overview");
+      setNotice(null);
+    };
+    addEventListener("hashchange", handler);
+    return () => removeEventListener("hashchange", handler);
+  }, []);
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    api("/health").then((value) => { if (!cancelled) setRuntime(value); }).catch(() => {});
+    api("/auth/me")
+      .then((account) => {
+        if (!cancelled) setUser(account);
+      })
+      .catch((error) => {
+        if (!cancelled) notify(error.message, "error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, api, notify]);
+  useEffect(() => {
+    if (
+      user &&
+      pages.find((page) => page.id === tab)?.admin &&
+      user.role !== "admin"
+    )
+      go("overview");
+  }, [tab, user, go]);
   const refresh = useCallback(async () => {
     if (!user) return;
-    if (tab === "events") {
-      const [events, model] = await Promise.all([
-        request("/alerts/threat-alerts?per_page=50"),
-        request("/detector/status"),
-      ]);
-      setData((d) => ({ ...d, events, model }));
-    } else if (tab === "files") {
-      const files = await request("/encryption/files");
-      setData((d) => ({ ...d, ...files }));
-    } else if (tab === "web") {
-      const scans = await request("/scans");
-      setData((d) => ({ ...d, scans }));
-    } else if (tab === "audit") {
-      setData((d) => ({ ...d, audit: null }));
-      const audit = await request("/alerts/audit-logs");
-      setData((d) => ({ ...d, audit }));
-    } else if (tab === "rules") {
-      const rules = await request("/alerts/rules");
-      setData((d) => ({ ...d, rules }));
+    setLoading(true);
+    try {
+      if (tab === "overview") {
+        const [overview, files, model] = await Promise.all([
+          api("/workspace/overview"),
+          api("/encryption/files"),
+          api("/detector/status"),
+        ]);
+        setData((old) => ({ ...old, overview, files, model }));
+      } else if (tab === "events") {
+        const events = await api("/workspace/events?" + eventQuery);
+        setData((old) => ({ ...old, events }));
+      } else if (tab === "web") {
+        const scans = await api("/scans");
+        setData((old) => ({ ...old, scans }));
+      } else if (tab === "files") {
+        const files = await api("/encryption/files");
+        setData((old) => ({ ...old, files }));
+      } else if (tab === "scanner") {
+        const [fileChecks, scannerStatus] = await Promise.all([
+          api("/file-checks"),
+          api("/file-checks/status"),
+        ]);
+        setData((old) => ({ ...old, fileChecks, scannerStatus }));
+      } else if (tab === "model") {
+        const model = await api("/detector/status");
+        setData((old) => ({ ...old, model }));
+      } else if (tab === "users" && user.role === "admin") {
+        const users = await api("/auth/users");
+        setData((old) => ({ ...old, users }));
+      } else if (tab === "rules") {
+        const rules = await api("/alerts/rules");
+        setData((old) => ({ ...old, rules }));
+      } else if (tab === "audit" && user.role === "admin") {
+        setData((old) => ({ ...old, audit: null }));
+        const audit = await api("/alerts/audit-logs?" + auditQuery);
+        setData((old) => ({ ...old, audit }));
+      }
+    } finally {
+      setLoading(false);
     }
-  }, [user, tab, request]);
+  }, [api, user, tab, eventQuery, auditQuery]);
   useEffect(() => {
-    if (token)
-      request("/auth/me")
-        .then(setUser)
-        .catch((e) => setError(e.message));
-  }, [token, request]);
+    refresh().catch((error) => notify(error.message, "error"));
+  }, [refresh, revision, notify]);
   useEffect(() => {
-    refresh().catch((e) => setError(e.message));
-  }, [refresh]);
-  useEffect(() => {
-    if (!token || !user) return;
+    if (!token || !user || !runtime) return;
+    if (runtime.event_updates === "polling") {
+      setConnection("Synced every 15s");
+      const sync = () => { if (!document.hidden) setRevision((old) => old + 1); };
+      const interval = setInterval(sync, 15000);
+      document.addEventListener("visibilitychange", sync);
+      return () => {
+        clearInterval(interval);
+        document.removeEventListener("visibilitychange", sync);
+      };
+    }
     let stopped = false,
       socket,
-      timer,
-      ping;
+      retry,
+      heartbeat,
+      update;
     const connect = () => {
       setConnection("Connecting");
       socket = new WebSocket(
@@ -123,512 +324,386 @@ export default function App() {
       );
       socket.onopen = () => {
         socket.send(JSON.stringify({ token }));
-        ping = setInterval(() => {
+        heartbeat = setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) socket.send("ping");
         }, 20000);
       };
       socket.onmessage = (event) => {
         try {
-          const payload = JSON.parse(event.data);
-          if (payload.type === "ready") setConnection("Connected");
-          if (payload.type === "threat_alert")
-            setData((d) => ({
-              ...d,
-              events: [payload.data, ...d.events].slice(0, 50),
-            }));
+          const message = JSON.parse(event.data);
+          if (message.type === "ready") setConnection("Connected");
+          if (message.type === "threat_alert" && !update)
+            update = setTimeout(() => {
+              update = null;
+              setRevision((old) => old + 1);
+            }, 500);
         } catch {
-          /* malformed frames do not become events */
+          /* Ignore non-JSON heartbeat frames. */
         }
       };
-      socket.onclose = () => {
-        clearInterval(ping);
+      socket.onclose = (event) => {
+        clearInterval(heartbeat);
         setConnection("Disconnected");
-        if (!stopped) timer = setTimeout(connect, 3000);
+        if (!stopped) {
+          if (event.code === 1008) api("/auth/me").catch(() => {});
+          retry = setTimeout(connect, 3000);
+        }
       };
       socket.onerror = () => socket.close();
     };
     connect();
     return () => {
       stopped = true;
-      clearTimeout(timer);
-      clearInterval(ping);
+      clearTimeout(retry);
+      clearTimeout(update);
+      clearInterval(heartbeat);
       socket?.close();
     };
-  }, [token, user]);
-  async function action(task) {
-    setBusy(true);
-    setError("");
-    setMessage("");
-    try {
-      await task();
-      return true;
-    } catch (e) {
-      setError(e.message);
-      return false;
-    } finally {
-      setBusy(false);
-    }
+  }, [token, user?.username, api, runtime]);
+  async function openInspector() {
+    const trigger = document.activeElement;
+    await run(async () => {
+      if (!data.samples.length) {
+        const result = await api("/detector/samples");
+        setData((old) => ({ ...old, samples: result.cases }));
+      }
+      setInspector({ trigger });
+    });
   }
   async function fileOperation(kind, filename) {
-    await action(async () => {
-      const result = await request("/encryption/" + kind, {
+    return run(async () => {
+      const result = await api("/encryption/" + kind, {
         method: "POST",
         body: new URLSearchParams({ filename }),
       });
-      setMessage(
+      notify(
         result.message + (result.sha256 ? ` · SHA-256 ${result.sha256}` : ""),
       );
       await refresh();
+      return true;
     });
   }
+  async function bulkFiles(kind, filenames) {
+    return run(async () => {
+      let completed = 0;
+      const failures = [];
+      for (const filename of filenames) {
+        try {
+          await api("/encryption/" + kind, {
+            method: "POST",
+            body: new URLSearchParams({ filename }),
+          });
+          completed++;
+        } catch (error) {
+          if (error.status === 401) throw error;
+          failures.push(`${filename}: ${error.message}`);
+        }
+      }
+      await refresh();
+      notify(
+        `${completed} file${completed === 1 ? "" : "s"} ${kind === "encrypt" ? "encrypted" : "restored"}.${failures.length ? " " + failures.length + " could not be processed. " + failures[0] : ""}`,
+        failures.length ? "warning" : "success",
+      );
+      return failures.length === 0;
+    });
+  }
+  async function download(path, filename) {
+    return run(async () => {
+      const response = await api(path, { raw: true });
+      saveData(await response.blob(), filename);
+    });
+  }
+  const current = pages.find((page) => page.id === tab) || pages[0];
+  const visible = pages.filter((page) => !page.admin || user?.role === "admin");
   if (!token || !user)
     return (
-      <div className="auth-page">
-        <main className="auth-card">
-          <Shield size={30} />
-          <p className="eyebrow">Security workspace</p>
-          <h1>SecureStream</h1>
-          <p className="muted">
-            Intrusion detection, website checks, and file protection.
-          </p>
-          {error && (
-            <p role="alert" className="notice error">
-              {error}
+      <div className="login-layout">
+        <aside className="login-story">
+          <Brand />
+          <div className="login-message">
+            <span className="eyebrow">One workspace. A clearer view.</span>
+            <h1>
+              Know what’s happening.
+              <br />
+              <span>Keep control of what matters.</span>
+            </h1>
+            <p>
+              Inspect network activity, check your websites, and protect the
+              files you need to keep.
             </p>
-          )}
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              const form = new FormData(event.currentTarget);
-              action(async () => {
-                const result = await request("/auth/login", {
-                  method: "POST",
-                  body: new URLSearchParams({
-                    username: form.get("username"),
-                    password: form.get("password"),
-                  }),
+            <div className="login-capabilities">
+              <span>
+                <Activity size={16} />
+                Intrusion detection
+              </span>
+              <span>
+                <Globe size={16} />
+                Website checks
+              </span>
+              <span>
+                <Lock size={16} />
+                File protection
+              </span>
+            </div>
+          </div>
+          <div className="login-bottom">
+            <span className="status-dot online" />
+            SecureStream / IDS X Enc
+          </div>
+        </aside>
+        <main className="login-main">
+          <div className="login-card">
+            <div className="login-mobile-brand">
+              <Brand />
+            </div>
+            <span className="eyebrow">Workspace access</span>
+            <h2>Welcome back.</h2>
+            <p className="muted">Sign in with your workspace account.</p>
+            {notice && (
+              <div className="notice error" role="alert">
+                {notice.message}
+              </div>
+            )}
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const values = new FormData(event.currentTarget);
+                run(async () => {
+                  const result = await api("/auth/login", {
+                    method: "POST",
+                    body: new URLSearchParams({
+                      username: values.get("username"),
+                      password: values.get("password"),
+                    }),
+                  });
+                  setSession(result.access_token);
                 });
-                sessionStorage.setItem(
-                  "securestream-token",
-                  result.access_token,
-                );
-                setToken(result.access_token);
-              });
-            }}
-          >
-            <label>
-              Username
-              <input name="username" autoComplete="username" required />
-            </label>
-            <label>
-              Password
-              <input
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-              />
-            </label>
-            <button disabled={busy} className="btn btn-primary">
-              {busy ? "Signing in…" : "Sign in"}
-            </button>
-          </form>
-          <p className="muted small">
-            Use an operator account created by your administrator.
-          </p>
+              }}
+            >
+              <label>
+                Username
+                <input
+                  name="username"
+                  autoComplete="username"
+                  required
+                  placeholder="Your username"
+                />
+              </label>
+              <label>
+                Password
+                <input
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  placeholder="Enter your password"
+                />
+              </label>
+              <button className="button primary" disabled={busy}>
+                {busy ? "Signing in…" : "Sign in"}
+                <ArrowUpRight size={16} />
+              </button>
+            </form>
+            <p className="login-help">
+              Need an account? Your workspace administrator can create one for
+              you.
+            </p>
+          </div>
         </main>
       </div>
     );
   return (
-    <div className="app-container">
-      <aside className="sidebar">
-        <div className="brand-section">
-          <Shield size={25} />
-          <span className="brand-name">SecureStream</span>
-        </div>
-        <p className="sidebar-caption">Security workspace</p>
-        <nav aria-label="Main navigation" className="nav-links">
-          {sections
-            .filter((s) => s.id !== "audit" || user.role === "admin")
-            .map(({ id, label, Icon }) => (
-              <button
-                key={id}
-                className={`nav-item ${tab === id ? "active" : ""}`}
-                aria-current={tab === id ? "page" : undefined}
-                onClick={() => {
-                  setTab(id);
-                  setError("");
-                  setMessage("");
-                }}
-              >
-                <Icon size={18} />
-                {label}
-              </button>
-            ))}
-        </nav>
-        <div className="secondary-navigation">
-          <button
-            className={`nav-item ${tab === "rules" ? "active" : ""}`}
-            onClick={() => setTab("rules")}
-          >
-            <Settings2 size={17} />
-            Saved rules
-          </button>
-        </div>
-        <div className="user-profile-section">
-          <div className="user-info">
-            <span className="user-name">{user.name}</span>
-            <span className="user-role">{user.role}</span>
+    <FeedbackContext.Provider value={notice}>
+      <div className="workspace">
+        <aside className="sidebar">
+          <div className="sidebar-top">
+            <Brand />
+            <button
+              className="icon-button mobile-menu-button"
+              aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
+              aria-expanded={mobileOpen}
+              aria-controls="workspace-navigation"
+              onClick={() => setMobileOpen(!mobileOpen)}
+            >
+              {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
           </div>
-          <button aria-label="Sign out" className="logout-btn" onClick={logout}>
-            <LogOut size={18} />
-          </button>
-        </div>
-      </aside>
-      <main className="main-content">
-        <header className="page-header">
-          <div>
-            <p className="eyebrow">
-              SecureStream /{" "}
-              {sections.find((s) => s.id === tab)?.label || "Saved rules"}
-            </p>
-            <h1>
-              {tab === "events"
-                ? "Intrusion events"
-                : tab === "web"
-                  ? "Website checks"
-                  : tab === "files"
-                    ? "File protection"
-                    : tab === "audit"
-                      ? "Audit history"
-                      : "Saved detection rules"}
-            </h1>
-          </div>
-          <button
-            disabled={busy}
-            className="btn btn-secondary"
-            onClick={() => action(refresh)}
+          <div
+            className={`sidebar-body ${mobileOpen ? "open" : ""}`}
+            id="workspace-navigation"
           >
-            <RefreshCw size={15} />
-            Refresh
-          </button>
-        </header>
-        {error && (
-          <p role="alert" className="notice error">
-            {error}
-          </p>
-        )}
-        {message && (
-          <p role="status" className="notice">
-            {message}
-          </p>
-        )}
-        <fieldset disabled={busy} className="workspace-controls">
-          {tab === "events" && (
-            <>
-              <section className="overview-strip">
-                <div>
-                  <span className="muted small">Stored events shown</span>
-                  <strong>{data.events.length}</strong>
-                </div>
-                <div>
-                  <span className="muted small">Trained model</span>
-                  <strong>
-                    {data.model?.available
-                      ? data.model.model_type
-                      : "Unavailable"}
-                  </strong>
-                </div>
-                <div>
-                  <span className="muted small">Alert stream</span>
-                  <strong>{connection}</strong>
-                </div>
-              </section>
-              <p className="context-note">
-                Stream status shows the API connection. Live packet capture
-                requires the separately configured IDS sensor. Replayed records
-                are labelled below.
-              </p>
-              <div className="event-layout">
-                <section className="card">
-                  <div className="section-heading">
-                    <h2>Recent events</h2>
-                    <span className="muted small">
-                      Latest 50 · persisted history
-                    </span>
-                  </div>
-                  <div className="table-container">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Time</th>
-                          <th>Result</th>
-                          <th>Origin</th>
-                          <th>Source → destination</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.events.length ? (
-                          data.events.map((e) => (
-                            <tr key={e.id}>
-                              <td className="small">
-                                {new Date(e.timestamp).toLocaleString()}
-                              </td>
-                              <td>
-                                <span
-                                  className={`badge ${e.alert_type === "Normal" ? "badge-success" : "badge-warning"}`}
-                                >
-                                  {e.alert_type}
-                                </span>
-                              </td>
-                              <td className="small">{e.origin || "sensor"}</td>
-                              <td className="small">
-                                {e.source_ip} → {e.destination_ip}
-                              </td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan="4">
-                              No events received. This does not establish that
-                              the network is safe.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-                <section className="card">
-                  <h2>Inspect a connection</h2>
-                  <p className="muted small">
-                    Run supplied NSL-KDD features through the saved model and
-                    scaler. This does not generate network traffic or encrypt
-                    files.
-                  </p>
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() =>
-                      action(async () => {
-                        const sample = await request("/detector/sample");
-                        setFeatures(JSON.stringify(sample.features, null, 2));
-                      })
-                    }
-                  >
-                    Load sample record
-                  </button>
-                  <form
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      action(async () => {
-                        const result = await request("/detector/predict", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            features: JSON.parse(features),
-                          }),
-                        });
-                        setMessage(
-                          `Model result: ${result.label} · ${result.model_type} · saved event #${result.event_id}`,
-                        );
-                        await refresh();
-                      });
-                    }}
-                  >
-                    <label>
-                      Connection features (JSON)
-                      <textarea
-                        value={features}
-                        onChange={(e) => setFeatures(e.target.value)}
-                        rows={9}
-                        required
-                        spellCheck="false"
-                      />
-                    </label>
-                    <button className="btn btn-primary">
-                      {busy ? "Running…" : "Run model prediction"}
-                    </button>
-                  </form>
-                  {data.model?.available && (
-                    <details className="model-details">
-                      <summary>Model bundle & evaluation</summary>
-                      <p className="small muted">
-                        {data.model.features} input features · artifact SHA-256
-                      </p>
-                      <code className="small break-word">
-                        {data.model.artifact_sha256}
-                      </code>
-                      {data.model.evaluation ? (
-                        <>
-                          <p className="small muted">
-                            Offline held-out dataset evaluation; not
-                            live-network accuracy.
-                          </p>
-                          <pre>
-                            {JSON.stringify(
-                              data.model.evaluation.metrics,
-                              null,
-                              2,
-                            )}
-                          </pre>
-                        </>
-                      ) : (
-                        <p className="small muted">
-                          No matching evaluation report published for this
-                          artifact.
-                        </p>
-                      )}
-                    </details>
-                  )}
-                </section>
-              </div>
-            </>
-          )}
-          {tab === "web" && (
-            <>
-              <div className="web-layout">
-                <section className="card">
-                  <h2>Check an authorized website</h2>
-                  <p className="muted small">
-                    Only hostnames configured by your administrator can be
-                    scanned. Findings are checks to investigate, not proof of
-                    exploitability.
-                  </p>
-                  {user.role === "admin" ? (
-                    <form
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        const form = new FormData(event.currentTarget);
-                        action(async () => {
-                          const result = await request("/scans/run", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                              url: form.get("url"),
-                              authorized: form.has("authorized"),
-                              ports: form.has("ports"),
-                              paths: form.has("paths"),
-                              reflected_input: form.has("reflected_input"),
-                              keywords: form.get("keywords") || "",
-                            }),
-                          });
-                          setScanResult(result);
-                          setMessage(
-                            `Website check #${result.id} saved · ${result.status.replaceAll("_", " ")}`,
-                          );
-                          await refresh();
-                        });
-                      }}
-                    >
-                      <label>
-                        Target URL
-                        <input
-                          name="url"
-                          type="url"
-                          placeholder="https://your-authorized-domain.com"
-                          required
-                        />
-                      </label>
-                      <label>
-                        Additional keywords
-                        <input
-                          name="keywords"
-                          placeholder="Optional, comma-separated"
-                          maxLength={300}
-                        />
-                      </label>
-                      <div className="check-list">
-                        <label>
-                          <input type="checkbox" name="paths" />
-                          Check common paths
-                        </label>
-                        <label>
-                          <input type="checkbox" name="ports" />
-                          Check common TCP ports
-                        </label>
-                        <label>
-                          <input type="checkbox" name="reflected_input" />
-                          Check reflected input in GET forms
-                        </label>
-                        <label>
-                          <input type="checkbox" name="authorized" required />I
-                          am authorized to check this target
-                        </label>
-                      </div>
-                      <button className="btn btn-primary">
-                        {busy ? "Checking website…" : "Run website check"}
-                      </button>
-                    </form>
-                  ) : (
-                    <p>Only administrators can start website checks.</p>
-                  )}
-                  <p className="context-note">
-                    Includes headers, TLS for HTTPS, CORS, redirects, mixed
-                    content, and keyword checks. Requests are bounded and
-                    redirects remain within configured scan scope.
-                  </p>
-                </section>
-                <section className="card">
-                  <h2>Saved checks</h2>
-                  <div className="scan-history">
-                    {data.scans.length ? (
-                      data.scans.map((run) => (
-                        <button
-                          key={run.id}
-                          className={`scan-history-item ${scanResult?.id === run.id ? "selected" : ""}`}
-                          onClick={() => setScanResult(run)}
-                        >
-                          <strong>{run.target}</strong>
-                          <span>
-                            #{run.id} ·{" "}
-                            {new Date(run.created_at).toLocaleString()} ·{" "}
-                            {run.status.replaceAll("_", " ")}
+            <nav aria-label="Main navigation">
+              {["Workspace", "Analysis", "Administration"].map((group) => (
+                <div className="nav-group" key={group}>
+                  <span className="nav-label">{group}</span>
+                  {visible
+                    .filter((page) => page.group === group)
+                    .map(({ id, label, icon: Icon }) => (
+                      <button
+                        key={id}
+                        className={`nav-item ${tab === id ? "active" : ""}`}
+                        aria-current={tab === id ? "page" : undefined}
+                        onClick={() => go(id)}
+                      >
+                        <Icon size={17} strokeWidth={1.7} />
+                        <span>{label}</span>
+                        {id === "users" && (
+                          <span className="nav-admin" aria-hidden="true">
+                            Admin
                           </span>
-                        </button>
-                      ))
-                    ) : (
-                      <p className="muted">No saved website checks yet.</p>
-                    )}
-                  </div>
-                </section>
+                        )}
+                      </button>
+                    ))}
+                </div>
+              ))}
+            </nav>
+            <div className="sidebar-bottom">
+              <div className="workspace-note">
+                <Shield size={17} />
+                <div>
+                  <strong>One security workspace</strong>
+                  <span>IDS, checks & file protection</span>
+                </div>
               </div>
-              {scanResult && (
-                <section className="card scan-findings">
-                  <div className="section-heading">
-                    <h2>Results · check #{scanResult.id}</h2>
-                    <span className="muted small">{scanResult.target}</span>
-                  </div>
-                  {scanResult.findings.map((finding, index) => (
-                    <div key={index} className={`finding ${finding.level}`}>
-                      <span className="badge">{finding.level}</span>
-                      <p>{finding.message}</p>
-                    </div>
-                  ))}
-                </section>
-              )}
-            </>
-          )}
-          {tab === "files" && (
-            <>
-              <p className="context-note">
-                Upload a sample file, encrypt it, then restore it. Encryption
-                removes the plaintext only after saving the encrypted copy.
-                Restoring keeps the encrypted backup. Maximum upload: 8 MB.
-              </p>
+              <button className="signout" onClick={logout}>
+                <LogOut size={16} />
+                Sign out
+              </button>
+            </div>
+          </div>
+        </aside>
+        <div className="workspace-main">
+          <header className="topbar">
+            <div className="breadcrumbs">
+              <span>{user.workspace_name || "Workspace"}</span>
+              <span className="breadcrumb-divider">/</span>
+              <strong>{current.label}</strong>
+            </div>
+            <div className="topbar-actions">
+              <span
+                className="stream-status"
+                title="Workspace updates; live capture requires a separately running host sensor."
+              >
+                <span
+                  className={`status-dot ${connection === "Connected" || connection === "Synced every 15s" ? "online" : ""}`}
+                />
+                <span>
+                  Updates <strong>{connection}</strong>
+                </span>
+              </span>
+              <span className="topbar-divider" />
+              <button
+                className="account-button"
+                aria-label="Account settings"
+                onClick={() => setProfile(true)}
+              >
+                <span className="avatar">
+                  {user.name.slice(0, 2).toUpperCase()}
+                </span>
+                <span className="account-name">
+                  {user.name}
+                  <ChevronDown size={13} />
+                </span>
+              </button>
+            </div>
+          </header>
+          <main className="page-content" aria-busy={loading}>
+            <div className="page-heading">
+              <div>
+                <span className="eyebrow">{current.group}</span>
+                <h1>{current.title}</h1>
+                {current.description && (
+                  <p className="muted">{current.description}</p>
+                )}
+              </div>
+              <button
+                className="button secondary refresh-button"
+                disabled={busy || loading}
+                onClick={() => run(refresh)}
+              >
+                <RefreshCw size={15} className={loading ? "spinning" : ""} />
+                <span>Refresh</span>
+              </button>
+            </div>
+            {notice && (
+              <div
+                className={`notice ${notice.tone}`}
+                role={notice.tone === "error" ? "alert" : "status"}
+              >
+                <span>{notice.message}</span>
+                <button
+                  className="icon-button"
+                  aria-label="Dismiss message"
+                  onClick={() => setNotice(null)}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            )}
+            {tab === "overview" && (
+              <OverviewTab
+                overview={data.overview}
+                files={data.files}
+                model={data.model}
+                onGo={go}
+                onInspect={openInspector}
+              />
+            )}
+            {tab === "events" && (
+              <EventsTab
+                events={data.events}
+                filters={eventFilters}
+                onFilters={setEventFilters}
+                onInspect={openInspector}
+                busy={busy}
+                onExport={(format) =>
+                  download(
+                    "/workspace/events/export?" +
+                      queryString({ ...eventFilters, page: undefined, format }),
+                    `security-events.${format}`,
+                  )
+                }
+              />
+            )}
+            {tab === "web" && (
+              <WebsiteTab
+                scans={data.scans}
+                api={api}
+                run={run}
+                refresh={refresh}
+                notify={notify}
+                busy={busy}
+                canManage={user.role === "admin"}
+              />
+            )}
+            {tab === "scanner" && (
+              <FileChecksTab
+                checks={data.fileChecks}
+                status={data.scannerStatus}
+                api={api}
+                run={run}
+                refresh={refresh}
+                notify={notify}
+                busy={busy}
+              />
+            )}
+            {tab === "files" && (
               <EncryptedFilesTab
-                sensitiveFiles={data.sensitive_files}
-                encryptedFiles={data.encrypted_files}
+                maxUploadBytes={data.files?.max_upload_bytes || runtime?.max_upload_bytes}
+                sensitiveFiles={data.files?.sensitive_files || []}
+                encryptedFiles={data.files?.encrypted_files || []}
+                busy={busy}
                 handleUpload={(event) => {
                   const file = event.target.files?.[0];
                   if (file)
-                    action(async () => {
+                    run(async () => {
                       const body = new FormData();
                       body.append("file", file);
-                      const result = await request("/encryption/upload", {
+                      const result = await api("/encryption/upload", {
                         method: "POST",
                         body,
                       });
-                      setMessage(
+                      notify(
                         `Uploaded ${file.name} · SHA-256 ${result.sha256}`,
                       );
                       await refresh();
@@ -636,106 +711,103 @@ export default function App() {
                 }}
                 handleEncrypt={(filename) => fileOperation("encrypt", filename)}
                 handleDecrypt={(filename) => fileOperation("decrypt", filename)}
+                handleBulk={bulkFiles}
+                handleDownload={(type, filename) =>
+                  download(
+                    "/encryption/download?" + queryString({ type, filename }),
+                    filename,
+                  )
+                }
                 handlePreview={(type, filename, trigger) =>
-                  action(async () =>
+                  run(async () =>
                     setPreview({
                       filename,
                       trigger,
-                      ...(await request(
-                        `/encryption/preview?type=${type}&filename=${encodeURIComponent(filename)}`,
+                      ...(await api(
+                        "/encryption/preview?" +
+                          queryString({ type, filename }),
                       )),
                     }),
                   )
                 }
               />
-            </>
-          )}
-          {tab === "audit" && (
-            <section className="card">
-              <h2>Audit chain verification</h2>
-              <p
-                className={`notice ${data.audit?.is_valid === false ? "error" : ""}`}
-              >
-                {data.audit === null
-                  ? "Not verified yet"
-                  : data.audit.is_valid
-                    ? "Stored audit chain verified"
-                    : "Audit chain mismatch at entry " +
-                      data.audit.tamper_index_id}
-              </p>
-              <p className="muted small">
-                This checks the stored hash chain. It is not an external
-                signature or a guarantee against a database administrator
-                rewriting the full chain.
-              </p>
-              <div className="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>Actor</th>
-                      <th>Action</th>
-                      <th>Details</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.audit?.logs?.map((log) => (
-                      <tr key={log.id}>
-                        <td className="small">{log.timestamp}</td>
-                        <td>{log.admin || "System"}</td>
-                        <td>{log.action}</td>
-                        <td className="small break-word">{log.details}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
-          {tab === "rules" && (
-            <>
-              <p className="context-note">
-                Saved rule configuration. These records do not modify your
-                operating-system firewall or automatically retrain the model.
-              </p>
+            )}
+            {tab === "model" && (
+              <ModelTab model={data.model} onInspect={openInspector} />
+            )}
+            {tab === "users" && user.role === "admin" && (
+              <UsersTab
+                users={data.users}
+                currentUser={user}
+                api={api}
+                run={run}
+                refresh={refresh}
+                notify={notify}
+                busy={busy}
+              />
+            )}
+            {tab === "rules" && (
               <ActiveRulesTab
                 rules={data.rules}
                 canManage={user.role === "admin"}
-                handleAddRule={(rule) =>
-                  action(async () => {
-                    await request("/alerts/rules", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        ...rule,
-                        threshold: rule.threshold
-                          ? Number(rule.threshold)
-                          : null,
-                        enabled: true,
-                      }),
-                    });
-                    await refresh();
-                  })
-                }
-                handleDeleteRule={(id) =>
-                  action(async () => {
-                    await request("/alerts/rules/" + id, { method: "DELETE" });
-                    await refresh();
-                  })
-                }
+                api={api}
+                run={run}
+                refresh={refresh}
+                notify={notify}
+                busy={busy}
               />
-            </>
-          )}
-        </fieldset>
-        <PreviewModal
-          showPreviewModal={!!preview}
-          setShowPreviewModal={(open) => {
-            if (!open) setPreview(null);
-          }}
-          previewContent={preview}
-          returnFocus={preview?.trigger}
-        />
-      </main>
-    </div>
+            )}
+            {tab === "audit" && user.role === "admin" && (
+              <AuditTab
+                audit={data.audit}
+                filters={auditFilters}
+                onFilters={setAuditFilters}
+              />
+            )}
+            <footer className="page-footer">
+              <span>SecureStream</span>
+              <span>IDS · Website checks · File protection</span>
+            </footer>
+          </main>
+        </div>
+        {profile && (
+          <AccountDialog
+            user={user}
+            api={api}
+            run={run}
+            busy={busy}
+            notify={notify}
+            onToken={setSession}
+            onClose={() => setProfile(false)}
+          />
+        )}
+        {inspector && (
+          <RecordInspector
+            samples={data.samples}
+            api={api}
+            run={run}
+            busy={busy}
+            notify={notify}
+            onClose={() => setInspector(null)}
+            onPrediction={refresh}
+            returnFocus={inspector.trigger}
+          />
+        )}
+        {preview && (
+          <Dialog
+            title={"File preview: " + preview.filename}
+            returnFocus={preview.trigger}
+            onClose={() => setPreview(null)}
+            wide
+          >
+            <pre className="file-preview">{preview.content}</pre>
+            <p className="footnote">
+              Preview is limited to the first portion of the file. Encrypted
+              content is shown as hexadecimal bytes.
+            </p>
+          </Dialog>
+        )}
+      </div>
+    </FeedbackContext.Provider>
   );
 }

@@ -16,6 +16,7 @@ from api.auth import get_current_user, DBUser
 from api.database import get_db
 from api.audit import log_audit
 from legacy import aes_encryptor
+from api.tenancy import storage_root
 
 router = APIRouter(prefix="/api/encryption", tags=["File protection"])
 PLAIN = DATA_ROOT / "files"
@@ -30,8 +31,8 @@ aes_encryptor.AES_KEY_PATH = str(KEYS / "aes_gcm_key.bin.enc")
 thread_lock = threading.RLock()
 
 @contextmanager
-def operation_lock():
-    with thread_lock, (DATA_ROOT / "file-operations.lock").open("a") as handle:
+def operation_lock(workspace_id=1):
+    with thread_lock, (storage_root(workspace_id) / "file-operations.lock").open("a") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
         try:
             yield
@@ -52,7 +53,25 @@ def existing(root, filename):
         raise HTTPException(404, "File not found")
     return path
 
-def cipher():
+def workspace_paths(user):
+    root = storage_root(user.workspace_id)
+    paths = [root / name for name in ("files", "encrypted", "keys")]
+    for directory in paths:
+        if directory.is_symlink():
+            raise HTTPException(400, "Invalid storage directory")
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    return paths
+
+def cipher(user):
+    _, _, keys = workspace_paths(user)
+    if user.workspace_id != 1:
+        path = checked_path(keys, "aes_gcm_key.bin")
+        if not path.exists():
+            with path.open("xb") as output:
+                os.fchmod(output.fileno(), 0o600)
+                output.write(AESGCM.generate_key(bit_length=256))
+                output.flush(); os.fsync(output.fileno())
+        return AESGCM(path.read_bytes())
     result = AESGCM(aes_encryptor.load_or_generate_key())
     for path in KEYS.iterdir():
         if path.is_file(): path.chmod(0o600)
@@ -60,12 +79,14 @@ def cipher():
 
 @router.get("/files")
 def list_files(user: DBUser = Depends(get_current_user)):
-    with operation_lock():
+    PLAIN, ENCRYPTED, _ = workspace_paths(user)
+    with operation_lock(user.workspace_id):
         return {"sensitive_files": sorted(p.name for p in PLAIN.iterdir() if p.is_file() and not p.is_symlink()), "encrypted_files": sorted(p.name for p in ENCRYPTED.iterdir() if p.is_file() and p.name.endswith(".enc") and not p.is_symlink()), "max_upload_bytes": MAX_UPLOAD_BYTES}
 
 @router.post("/upload")
 def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db), user: DBUser = Depends(get_current_user)):
-    with operation_lock():
+    PLAIN, ENCRYPTED, _ = workspace_paths(user)
+    with operation_lock(user.workspace_id):
         path = checked_path(PLAIN, file.filename or "")
         try:
             with path.open("xb") as output:
@@ -86,11 +107,12 @@ def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db), use
 
 @router.post("/encrypt")
 def encrypt_file(filename: str = Form(...), db: Session = Depends(get_db), user: DBUser = Depends(get_current_user)):
-    with operation_lock():
+    PLAIN, ENCRYPTED, _ = workspace_paths(user)
+    with operation_lock(user.workspace_id):
         path = existing(PLAIN, filename)
         destination = checked_path(ENCRYPTED, filename + ".enc")
         nonce = os.urandom(12)
-        payload = nonce + cipher().encrypt(nonce, path.read_bytes(), None)
+        payload = nonce + cipher(user).encrypt(nonce, path.read_bytes(), None)
         try:
             with destination.open("xb") as output:
                 output.write(payload); output.flush(); os.fsync(output.fileno())
@@ -106,12 +128,13 @@ def encrypt_file(filename: str = Form(...), db: Session = Depends(get_db), user:
 
 @router.post("/decrypt")
 def decrypt_file(filename: str = Form(...), db: Session = Depends(get_db), user: DBUser = Depends(get_current_user)):
-    with operation_lock():
+    PLAIN, ENCRYPTED, _ = workspace_paths(user)
+    with operation_lock(user.workspace_id):
         if not filename.endswith(".enc"): raise HTTPException(400, "Choose an .enc file")
         path = existing(ENCRYPTED, filename)
         destination = checked_path(PLAIN, filename[:-4])
         payload = path.read_bytes()
-        try: plaintext = cipher().decrypt(payload[:12], payload[12:], None)
+        try: plaintext = cipher(user).decrypt(payload[:12], payload[12:], None)
         except Exception: raise HTTPException(422, "Ciphertext authentication failed; nothing was restored")
         try:
             with destination.open("xb") as output:
@@ -125,17 +148,18 @@ def decrypt_file(filename: str = Form(...), db: Session = Depends(get_db), user:
         log_audit(db, user.username, "decrypt_file", None, {"filename": destination.name, "sha256": digest})
         return {"message": "File restored; encrypted backup retained", "sha256": digest}
 
-def file_bytes(kind, filename):
+def file_bytes(kind, filename, user):
+    PLAIN, ENCRYPTED, _ = workspace_paths(user)
     roots = {"sensitive": PLAIN, "encrypted": ENCRYPTED}
     if kind not in roots: raise HTTPException(400, "Invalid file type")
     return existing(roots[kind], filename).read_bytes()
 
 @router.get("/preview")
 def preview(type: str = Query(...), filename: str = Query(...), user: DBUser = Depends(get_current_user)):
-    with operation_lock(): data = file_bytes(type, filename)
+    with operation_lock(user.workspace_id): data = file_bytes(type, filename, user)
     return {"is_image": False, "content": data[:256].hex() if type == "encrypted" else data[:10000].decode("utf-8", errors="replace")}
 
 @router.get("/download")
 def download(type: str = Query(...), filename: str = Query(...), user: DBUser = Depends(get_current_user)):
-    with operation_lock(): data = file_bytes(type, filename)
+    with operation_lock(user.workspace_id): data = file_bytes(type, filename, user)
     return Response(data, media_type="application/octet-stream", headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename, safe='')}"})

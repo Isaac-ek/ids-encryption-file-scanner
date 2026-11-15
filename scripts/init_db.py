@@ -8,7 +8,8 @@ from api.models import DBUser, DBRule, DBAuditLog, DBThreatAlert
 
 def init_db():
     print("Creating database tables...")
-    Base.metadata.create_all(bind=engine)
+    from api.tenancy import initialize_database
+    initialize_database(engine, Base)
     print("Database tables created successfully!")
 
 if __name__ == "__main__":

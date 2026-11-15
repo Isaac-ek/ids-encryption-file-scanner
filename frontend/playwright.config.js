@@ -12,12 +12,13 @@ export default defineConfig({
   timeout: 45000,
   use: {
     baseURL: "http://127.0.0.1:8184",
+    viewport: { width: 1440, height: 960 },
     channel: process.env.PLAYWRIGHT_CHROMIUM_CHANNEL || undefined,
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
   },
   webServer: {
-    command: `"${python}" scripts/create_admin.py && "${python}" -m uvicorn api.main:app --host 127.0.0.1 --port 8184`,
+    command: `"${python}" tests/browser_setup.py && "${python}" -m uvicorn api.main:app --host 127.0.0.1 --port 8184`,
     cwd: root,
     url: "http://127.0.0.1:8184/api/health",
     reuseExistingServer: false,
