@@ -5,6 +5,7 @@ One authenticated security workspace combining the trained intrusion detector fr
 - **Events:** inspect persisted sensor events and run supplied connection features through the existing trained model. Replays are labelled `model-replay` and never presented as live capture.
 - **Website checks:** run scoped HTTP/TLS/header, CORS, redirect, keyword, mixed-content and optional common-path/TCP/reflected-GET checks. Reports persist and link to the shared audit history.
 - **Files:** upload, preview, encrypt and restore files using AES-256-GCM. Restores return SHA-256 and retain the encrypted backup.
+- **People and controls:** provision user logins, manage roles and passwords, edit detection rules, filter/export events, inspect files with optional local ClamAV, and review model metrics. See [feature coverage](docs/feature-coverage.md) for workflow boundaries.
 - **Audit:** verify the stored hash chain and inspect user actions. A valid chain is not an externally signed or immutable ledger.
 
 The current bundled classifier is **XGBoost**. Its model, scaler and feature-column artifacts are preserved, not retrained. The Random Forest and XGBoost training sources remain available. The interface reads model identity from the loaded object and only shows an evaluation whose model hash matches.

@@ -3,11 +3,13 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from api.auth import router as auth_router, decode_access_token
+from api.auth import router as auth_router, decode_access_token, session_stamp
 from api.alerts import router as alerts_router
 from api.encryption import router as encryption_router
 from api.detector import router as detector_router
 from api.scans import router as scans_router
+from api.workspace import router as workspace_router
+from api.file_checks import router as file_checks_router
 from api.websocket_manager import manager
 from api.database import Base, engine, SessionLocal
 from api.models import DBUser
@@ -18,7 +20,7 @@ async def lifespan(app):
     yield
 
 app = FastAPI(title="SecureStream · IDS and Website Security", version="1.0.0", lifespan=lifespan)
-for router in [auth_router, alerts_router, encryption_router, detector_router, scans_router]:
+for router in [auth_router, alerts_router, encryption_router, detector_router, scans_router, workspace_router, file_checks_router]:
     app.include_router(router)
 
 @app.get("/api/health")
@@ -36,12 +38,15 @@ async def alerts_socket(websocket: WebSocket):
         payload = decode_access_token(packet.get("token", ""))
         with SessionLocal() as db:
             valid = payload and db.query(DBUser).filter(DBUser.username == payload.get("sub")).first()
-        if not valid:
+        if not valid or payload.get("auth_stamp") != session_stamp(valid):
             await websocket.close(code=1008); return
         manager.active_connections.append(websocket)
         await websocket.send_json({"type":"ready"})
         while True:
-            if decode_access_token(packet["token"]) is None:
+            with SessionLocal() as db:
+                account = db.query(DBUser).filter(DBUser.username == payload["sub"]).first()
+                still_active = account is not None and payload.get("auth_stamp") == session_stamp(account)
+            if not still_active or decode_access_token(packet["token"]) is None:
                 await websocket.close(code=1008); break
             await asyncio.wait_for(websocket.receive_text(), timeout=60)
     except (WebSocketDisconnect, asyncio.TimeoutError, ValueError, TypeError, KeyError):

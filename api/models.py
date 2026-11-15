@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Boolean
-from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional, Dict, Any, Literal
 from api.database import Base
 
 # ==================== SQLAlchemy Database Models ====================
@@ -49,23 +49,22 @@ class DBThreatAlert(Base):
 # ==================== Pydantic Schemas for API ====================
 
 class UserBase(BaseModel):
-    username: str
-    name: str
-    role: str
+    username: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
+    name: str = Field(min_length=1, max_length=100)
+    role: Literal["admin", "user"] = "user"
 
 class UserCreate(UserBase):
-    password: str
+    password: str = Field(min_length=12, max_length=128)
 
 class UserEdit(BaseModel):
-    name: Optional[str] = None
-    role: Optional[str] = None
-    password: Optional[str] = None
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    role: Optional[Literal["admin", "user"]] = None
+    password: Optional[str] = Field(default=None, min_length=12, max_length=128)
 
 class UserResponse(UserBase):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class DBScanRun(Base):
     __tablename__ = "scan_runs"
@@ -77,17 +76,16 @@ class DBScanRun(Base):
     findings_json = Column(String, nullable=False)
 
 class RuleBase(BaseModel):
-    name: str
-    type: str
-    value: str
-    threshold: Optional[int] = None
+    name: str = Field(min_length=1, max_length=100)
+    type: Literal["ip", "port", "bandwidth"]
+    value: str = Field(min_length=1, max_length=200)
+    threshold: Optional[int] = Field(default=None, ge=0, le=2147483647)
     enabled: bool = True
 
 class RuleResponse(RuleBase):
     id: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class AuditLogResponse(BaseModel):
     id: int
@@ -99,8 +97,7 @@ class AuditLogResponse(BaseModel):
     prev_hash: str
     entry_hash: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ThreatAlertResponse(BaseModel):
     origin: str = "sensor"
@@ -110,5 +107,15 @@ class ThreatAlertResponse(BaseModel):
     source_ip: str
     destination_ip: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DBFileCheck(Base):
+    __tablename__ = "file_checks"
+    id = Column(Integer, primary_key=True)
+    filename = Column(String, nullable=False)
+    sha256 = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    requested_by = Column(String, nullable=False)
+    created_at = Column(String, nullable=False)
+    report_json = Column(String, nullable=False)

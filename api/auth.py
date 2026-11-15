@@ -12,6 +12,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from api.database import get_db
 from api.models import DBUser, UserCreate, UserEdit, UserResponse
+from pydantic import BaseModel, Field
 from api.audit import log_audit
 
 from api.settings import required_secret
@@ -74,6 +75,9 @@ def decode_access_token(token: str) -> Optional[dict]:
 
 # ==================== Dependency Injection Helpers ====================
 
+def session_stamp(user):
+    return hmac.new(SECRET_KEY.encode(), user.password.encode(), hashlib.sha256).hexdigest()
+
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> DBUser:
     payload = decode_access_token(token)
     if not payload:
@@ -94,6 +98,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
+    if not hmac.compare_digest(payload.get("auth_stamp", ""), session_stamp(user)):
+        raise HTTPException(401, "Your session has changed. Please sign in again.")
     return user
 
 def require_admin(current_user: DBUser = Depends(get_current_user)) -> DBUser:
@@ -118,7 +124,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             detail="Incorrect username or password"
         )
 
-    access_token = create_access_token(data={"sub": user.username})
+    access_token = create_access_token(data={"sub": user.username, "auth_stamp": session_stamp(user)})
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -168,6 +174,9 @@ def edit_user(username: str, user_in: UserEdit, db: Session = Depends(get_db), c
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    if username == current_user.username and user_in.role not in {None, "admin"}:
+        raise HTTPException(409, "You cannot remove your own administrator access")
+
     old_details = {"name": db_user.name, "role": db_user.role}
     new_details = {}
 
@@ -193,8 +202,24 @@ def delete_user(username: str, db: Session = Depends(get_db), current_user: DBUs
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    if username == current_user.username:
+        raise HTTPException(409, "You cannot delete the account you are signed in with")
     db.delete(db_user)
     db.commit()
 
     log_audit(db, admin=current_user.username, action="delete_user", target_user=username)
     return {"message": f"User {username} deleted successfully"}
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=12, max_length=128)
+
+@router.post("/password")
+def change_password(payload: PasswordChange, db: Session = Depends(get_db), user: DBUser = Depends(get_current_user)):
+    if not check_password_hash(user.password, payload.current_password):
+        raise HTTPException(400, "Current password is incorrect")
+    user.password = generate_password_hash(payload.new_password)
+    db.commit()
+    log_audit(db, user.username, "change_password", user.username)
+    return {"message": "Password changed. Other sessions will need to sign in again.", "access_token": create_access_token({"sub": user.username, "auth_stamp": session_stamp(user)})}

@@ -12,6 +12,7 @@ export default defineConfig({
   timeout: 45000,
   use: {
     baseURL: "http://127.0.0.1:8184",
+    viewport: { width: 1440, height: 960 },
     channel: process.env.PLAYWRIGHT_CHROMIUM_CHANNEL || undefined,
     screenshot: "only-on-failure",
     trace: "retain-on-failure",

@@ -110,6 +110,7 @@ def get_audit_logs(
     action: Optional[str] = None,
     admin_user: Optional[str] = None,
     target_user: Optional[str] = None,
+    date: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: DBUser = Depends(require_admin)
 ):
@@ -123,7 +124,9 @@ def get_audit_logs(
     if target_user:
         query = query.filter(DBAuditLog.target_user == target_user)
 
-    logs = query.order_by(DBAuditLog.timestamp.desc()).all()
+    if date:
+        query = query.filter(DBAuditLog.timestamp.startswith(date))
+    logs = query.order_by(DBAuditLog.id.desc()).limit(500).all()
 
     return {
         "is_valid": is_valid,
