@@ -1,0 +1,25 @@
+FROM node:22-alpine AS interface
+WORKDIR /frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+FROM python:3.12-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+COPY api ./api
+COPY web_scanner ./web_scanner
+COPY scanner_utils ./scanner_utils
+COPY legacy ./legacy
+COPY worker ./worker
+COPY scripts ./scripts
+COPY models2 ./models2
+COPY examples ./examples
+COPY --from=interface /frontend/dist ./frontend/dist
+RUN useradd --user-group --create-home securestream && mkdir -p /app/.runtime && chown securestream:securestream /app/.runtime
+USER securestream
+EXPOSE 8000
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

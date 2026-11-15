@@ -1,0 +1,109 @@
+{
+  "model_type": "XGBClassifier",
+  "model_sha256": "000d2cfe561f71d59716d2b9acc74b019bae80aafe6e045fc7b0a9e9343498fd",
+  "dataset": "NSL_KDD_Test.csv",
+  "dataset_sha256": "80f6ad16508424535ce4094497f50bffe4794663a875628a605d15a9736bce46",
+  "records": 22544,
+  "kind": "offline held-out benchmark, not a live-traffic measurement",
+  "metrics": {
+    "accuracy": 0.7777679205110007,
+    "balanced_accuracy": 0.5370611716206003,
+    "classification": {
+      "Normal": {
+        "precision": 0.6789545683634531,
+        "recall": 0.9710637421480794,
+        "f1-score": 0.7991525423728814,
+        "support": 9711.0
+      },
+      "DoS": {
+        "precision": 0.9639653572533251,
+        "recall": 0.8355227882037534,
+        "f1-score": 0.8951601321269568,
+        "support": 7460.0
+      },
+      "Probe": {
+        "precision": 0.8324022346368715,
+        "recall": 0.6154481619165634,
+        "f1-score": 0.7076703870814534,
+        "support": 2421.0
+      },
+      "R2L": {
+        "precision": 0.9712793733681462,
+        "recall": 0.1289428076256499,
+        "f1-score": 0.22766217870257038,
+        "support": 2885.0
+      },
+      "U2R": {
+        "precision": 0.5625,
+        "recall": 0.13432835820895522,
+        "f1-score": 0.21686746987951808,
+        "support": 67.0
+      },
+      "accuracy": 0.7777679205110007,
+      "macro avg": {
+        "precision": 0.8018203067243592,
+        "recall": 0.5370611716206003,
+        "f1-score": 0.569302542032676,
+        "support": 22544.0
+      },
+      "weighted avg": {
+        "precision": 0.8268090702941032,
+        "recall": 0.7777679205110007,
+        "f1-score": 0.7462327199171925,
+        "support": 22544.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        9430,
+        67,
+        209,
+        2,
+        3
+      ],
+      [
+        1141,
+        6233,
+        86,
+        0,
+        0
+      ],
+      [
+        765,
+        166,
+        1490,
+        0,
+        0
+      ],
+      [
+        2505,
+        0,
+        4,
+        372,
+        4
+      ],
+      [
+        48,
+        0,
+        1,
+        9,
+        9
+      ]
+    ]
+  },
+  "bundle_sha256": {
+    "ids_model_full.joblib": "000d2cfe561f71d59716d2b9acc74b019bae80aafe6e045fc7b0a9e9343498fd",
+    "scaler.joblib": "81a25c92ffd7f613fffe9bb068d9abf886ce0e036e3e493f79592dd86d6619f7",
+    "feature_columns.joblib": "706e5943f4ace5e79f7398af4c015648fd7fd9ce05ba0dfb66bec892c4ba95fe"
+  },
+  "environment": {
+    "python": "3.12.13",
+    "platform": "Darwin",
+    "libraries": {
+      "scikit-learn": "1.6.1",
+      "xgboost": "3.0.2",
+      "numpy": "2.5.4",
+      "pandas": "3.1.1"
+    }
+  }
+}
