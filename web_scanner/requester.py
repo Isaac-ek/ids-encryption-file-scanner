@@ -24,14 +24,15 @@ def resolve_target(url):
     if host not in allowed:
         raise TargetDenied("Target hostname is not in SCAN_ALLOWED_HOSTS")
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    if port not in {80, 443} and os.getenv("SCAN_ALLOW_LOCALHOST") != "true":
+    fixture_host = os.getenv("SCAN_ALLOW_LOCALHOST") == "true" and host in {"localhost", "127.0.0.1", "::1"}
+    if port not in {80, 443} and not fixture_host:
         raise TargetDenied("Only standard HTTP/HTTPS ports are allowed")
     addresses = list(dict.fromkeys(info[4][0] for info in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)))
     if not addresses: raise TargetDenied("Target did not resolve")
     for address in addresses:
         ip = ipaddress.ip_address(address)
-        local_fixture = os.getenv("SCAN_ALLOW_LOCALHOST") == "true" and host in {"localhost", "127.0.0.1", "::1"} and ip.is_loopback
-        if not ip.is_global and not local_fixture:
+        local_fixture = fixture_host and ip.is_loopback
+        if (not ip.is_global or ip.is_multicast) and not local_fixture:
             raise TargetDenied("Private, link-local, reserved and metadata addresses are not scan targets")
     return parsed, addresses[0], port
 

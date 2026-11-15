@@ -104,8 +104,8 @@ def test_website_scan_is_authenticated_scoped_saved_and_audited(client,auth):
 
 
 def test_scope_rejects_private_targets_even_when_allowlisted(monkeypatch):
-    monkeypatch.setenv('SCAN_ALLOWED_HOSTS','169.254.169.254,10.0.0.1')
-    for target in ['http://169.254.169.254','http://10.0.0.1']:
+    monkeypatch.setenv('SCAN_ALLOWED_HOSTS','169.254.169.254,10.0.0.1,224.0.0.1,8.8.8.8')
+    for target in ['http://169.254.169.254','http://10.0.0.1','http://224.0.0.1','http://8.8.8.8:8181']:
         with pytest.raises(TargetDenied):resolve_target(target)
 
 
