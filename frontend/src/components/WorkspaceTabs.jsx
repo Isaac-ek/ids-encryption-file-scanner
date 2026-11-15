@@ -555,7 +555,7 @@ export function FileChecksTab({
                 onChange={(event) => setFile(event.target.files[0])}
               />
               <span className="field-help">
-                Up to 8 MB. The temporary file is discarded after inspection.
+                Up to {status?.max_upload_bytes ? `${status.max_upload_bytes / (1024 * 1024)} MB` : "the host limit"}. The temporary file is discarded after inspection.
               </span>
             </label>
             <button className="button primary" disabled={busy || !file}>

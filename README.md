@@ -60,8 +60,8 @@ Tests use a fresh temporary database, temporary sample files and a local owned H
 
 ## Deployment
 
-`docker compose up --build` runs one container with one persistent volume. Set `JWT_SECRET` and `WORKER_TOKEN` first. Create an administrator with `docker compose exec -e BOOTSTRAP_PASSWORD=... security python scripts/create_admin.py`. Put HTTPS in front of the app. The container serves the web app; packet capture remains a separately configured host sensor. The old split Flask/Vercel and nginx UI entrypoints were removed.
+`docker compose up --build` runs one container with one persistent volume. Set `JWT_SECRET` and `WORKER_TOKEN` first. Create an administrator with `docker compose exec -e BOOTSTRAP_PASSWORD=... security python scripts/create_admin.py`. Put HTTPS in front of the app. The container serves the web app; packet capture remains a separately configured host sensor. The old split Flask and nginx UI entrypoints were removed.
 
-A new installation uses SQLite with a single API process. PostgreSQL is supported via `DATABASE_URL`. Alert fan-out is currently process-local: run one API worker until a shared broadcast broker is configured. Existing FastAPI-rewrite databases need the additive migration described in `docs/migration.md`; original project folders/databases are not modified by this consolidation.
+A new local installation uses SQLite with a single API process. PostgreSQL is supported via `DATABASE_URL`. The persistent Vercel setup uses database-backed encrypted files and 15-second shared-state refresh; see [Vercel deployment](docs/vercel-deployment.md). Local WebSocket fan-out remains process-local, so use one API worker when relying on that event stream. Existing FastAPI-rewrite databases need the additive migration described in `docs/migration.md`; original project folders/databases are not modified by this consolidation.
 
 Customer provisioning and isolation: [customer workspaces](docs/customer-workspaces.md). Verified flow extraction, candidate training and remaining live-data requirements: [detector validation](docs/detector-validation.md).

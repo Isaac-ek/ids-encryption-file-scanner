@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from api.auth import DBUser, require_admin, get_current_user
 from api.database import get_db
 from api.models import DBScanRun, DBWorkspace
@@ -38,6 +39,8 @@ def _run_scan(payload: ScanRequest, db: Session, user: DBUser):
     if not payload.authorized: raise HTTPException(422, "Confirm you are authorized to check this target")
     try: target, address, port = resolve_target(payload.url)
     except (ValueError, OSError) as error: raise HTTPException(400, str(error))
+    if db.bind.dialect.name == "postgresql" and not db.execute(text("SELECT pg_try_advisory_xact_lock(8372603, :workspace)"), {"workspace": user.workspace_id}).scalar():
+        raise HTTPException(409, "Another scan is running in this workspace; try again shortly")
     if not scan_slot.acquire(blocking=False): raise HTTPException(409, "Another scan is running; try again shortly")
     token = budget.set(time.monotonic() + 25)
     report = Reporter()

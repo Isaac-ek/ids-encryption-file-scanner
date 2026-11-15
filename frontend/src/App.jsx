@@ -131,6 +131,7 @@ export default function App() {
     [loading, setLoading] = useState(false),
     [notice, setNotice] = useState(null),
     [connection, setConnection] = useState("Disconnected"),
+    [runtime, setRuntime] = useState(null),
     [revision, setRevision] = useState(0);
   const [eventFilters, setEventFilters] = useState({ page: 1 }),
     [auditFilters, setAuditFilters] = useState({}),
@@ -232,6 +233,7 @@ export default function App() {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
+    api("/health").then((value) => { if (!cancelled) setRuntime(value); }).catch(() => {});
     api("/auth/me")
       .then((account) => {
         if (!cancelled) setUser(account);
@@ -299,7 +301,17 @@ export default function App() {
     refresh().catch((error) => notify(error.message, "error"));
   }, [refresh, revision, notify]);
   useEffect(() => {
-    if (!token || !user) return;
+    if (!token || !user || !runtime) return;
+    if (runtime.event_updates === "polling") {
+      setConnection("Synced every 15s");
+      const sync = () => { if (!document.hidden) setRevision((old) => old + 1); };
+      const interval = setInterval(sync, 15000);
+      document.addEventListener("visibilitychange", sync);
+      return () => {
+        clearInterval(interval);
+        document.removeEventListener("visibilitychange", sync);
+      };
+    }
     let stopped = false,
       socket,
       retry,
@@ -347,7 +359,7 @@ export default function App() {
       clearInterval(heartbeat);
       socket?.close();
     };
-  }, [token, user?.username, api]);
+  }, [token, user?.username, api, runtime]);
   async function openInspector() {
     const trigger = document.activeElement;
     await run(async () => {
@@ -570,13 +582,13 @@ export default function App() {
             <div className="topbar-actions">
               <span
                 className="stream-status"
-                title="Workspace event-stream connection; live capture requires the host sensor."
+                title="Workspace updates; live capture requires a separately running host sensor."
               >
                 <span
-                  className={`status-dot ${connection === "Connected" ? "online" : ""}`}
+                  className={`status-dot ${connection === "Connected" || connection === "Synced every 15s" ? "online" : ""}`}
                 />
                 <span>
-                  Event stream <strong>{connection}</strong>
+                  Updates <strong>{connection}</strong>
                 </span>
               </span>
               <span className="topbar-divider" />
@@ -677,6 +689,7 @@ export default function App() {
             )}
             {tab === "files" && (
               <EncryptedFilesTab
+                maxUploadBytes={data.files?.max_upload_bytes || runtime?.max_upload_bytes}
                 sensitiveFiles={data.files?.sensitive_files || []}
                 encryptedFiles={data.files?.encrypted_files || []}
                 busy={busy}

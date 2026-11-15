@@ -33,9 +33,12 @@ def storage_root(workspace_id):
     return root
 
 def initialize_database(engine, base):
-    base.metadata.create_all(engine)
     # Additive migration: every pre-workspace record belongs to the original customer.
     with engine.begin() as connection:
+        if connection.dialect.name == "postgresql":
+            # Serialize cold starts and additive migrations across function instances.
+            connection.execute(text("SELECT pg_advisory_xact_lock(8372600)"))
+        base.metadata.create_all(connection)
         tables = inspect(connection)
         for table in ["users", "rules", "audit_logs", "threat_alerts", "scan_runs", "file_checks"]:
             if "workspace_id" not in {column["name"] for column in tables.get_columns(table)}:
@@ -43,7 +46,7 @@ def initialize_database(engine, base):
             connection.execute(text(f'CREATE INDEX IF NOT EXISTS ix_{table}_workspace_id ON {table} (workspace_id)'))
         if "scan_allowed_hosts" not in {c["name"] for c in tables.get_columns("workspaces")}:
             connection.execute(text("ALTER TABLE workspaces ADD COLUMN scan_allowed_hosts VARCHAR NOT NULL DEFAULT ''"))
-        connection.execute(text("INSERT INTO workspaces (id, slug, name, scan_allowed_hosts) SELECT 1, 'main', 'Main workspace', '' WHERE NOT EXISTS (SELECT 1 FROM workspaces WHERE id = 1)"))
+        inserted = connection.execute(text("INSERT INTO workspaces (id, slug, name, scan_allowed_hosts) SELECT 1, 'main', 'Main workspace', '' WHERE NOT EXISTS (SELECT 1 FROM workspaces WHERE id = 1)"))
 
-        if connection.dialect.name == "postgresql":
+        if connection.dialect.name == "postgresql" and inserted.rowcount:
             connection.execute(text("SELECT setval(pg_get_serial_sequence('workspaces', 'id'), (SELECT MAX(id) FROM workspaces), true)"))

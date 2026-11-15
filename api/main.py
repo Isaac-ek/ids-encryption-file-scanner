@@ -5,7 +5,11 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from api.auth import router as auth_router, decode_access_token, session_stamp
 from api.alerts import router as alerts_router
-from api.encryption import router as encryption_router
+from api.settings import FILE_STORAGE_BACKEND, IS_VERCEL, MAX_UPLOAD_BYTES
+if FILE_STORAGE_BACKEND == "database":
+    from api.cloud_files import router as encryption_router
+else:
+    from api.encryption import router as encryption_router
 from api.detector import router as detector_router
 from api.scans import router as scans_router
 from api.workspace import router as workspace_router
@@ -17,7 +21,14 @@ from api.models import DBUser
 @asynccontextmanager
 async def lifespan(app):
     from api.tenancy import initialize_database
-    initialize_database(engine, Base)
+    if IS_VERCEL:
+        from sqlalchemy import inspect
+        with engine.connect() as connection:
+            missing = set(Base.metadata.tables) - set(inspect(connection).get_table_names())
+            if missing:
+                raise RuntimeError("Database migration required before deployment")
+    else:
+        initialize_database(engine, Base)
     yield
 
 app = FastAPI(title="SecureStream · IDS and Website Security", version="1.0.0", lifespan=lifespan)
@@ -25,7 +36,7 @@ for router in [auth_router, alerts_router, encryption_router, detector_router, s
     app.include_router(router)
 
 @app.get("/api/health")
-def health(): return {"status": "ok"}
+def health(): return {"status": "ok", "event_updates": "polling" if IS_VERCEL else "websocket", "poll_interval_seconds": 15, "max_upload_bytes": MAX_UPLOAD_BYTES}
 
 @app.websocket("/api/ws/alerts")
 async def alerts_socket(websocket: WebSocket):

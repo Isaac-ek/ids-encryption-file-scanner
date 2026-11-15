@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import Column, Integer, String, Boolean, LargeBinary, UniqueConstraint
 
 class WorkspaceScoped:
     workspace_id = Column(Integer, nullable=False, default=1, index=True)
@@ -133,3 +133,22 @@ class DBWorkspace(Base):
     name = Column(String, nullable=False)
     worker_token_hash = Column(String, nullable=True)
     scan_allowed_hosts = Column(String, nullable=False, default="")
+
+
+class DBWorkspaceKey(WorkspaceScoped, Base):
+    __tablename__ = "workspace_keys"
+    __table_args__ = (UniqueConstraint("workspace_id"),)
+    id = Column(Integer, primary_key=True)
+    # AES-256 key wrapped by KEY_ENCRYPTION_KEY, never stored unwrapped.
+    wrapped_key = Column(LargeBinary, nullable=False)
+
+
+class DBStoredFile(WorkspaceScoped, Base):
+    __tablename__ = "stored_files"
+    __table_args__ = (UniqueConstraint("workspace_id", "kind", "filename"),)
+    id = Column(Integer, primary_key=True)
+    kind = Column(String, nullable=False)
+    filename = Column(String, nullable=False)
+    # Both originals and encrypted backups are encrypted at rest.
+    payload = Column(LargeBinary, nullable=False)
+    size = Column(Integer, nullable=False)

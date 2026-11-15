@@ -12,6 +12,7 @@ import {
 import { Badge, Empty } from "./ui";
 
 export default function EncryptedFilesTab({
+  maxUploadBytes,
   sensitiveFiles,
   encryptedFiles,
   handleUpload,
@@ -80,7 +81,7 @@ export default function EncryptedFilesTab({
             </button>
           </div>
           <span className="muted text-small">
-            AES-256-GCM · Max. upload 8 MB
+            AES-256-GCM · Max. upload {maxUploadBytes ? `${maxUploadBytes / (1024 * 1024)} MB` : "loading…"}
           </span>
         </div>
         {selected.length > 0 && (

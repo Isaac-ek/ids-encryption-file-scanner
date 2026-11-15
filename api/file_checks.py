@@ -39,7 +39,7 @@ def history(db: Session = Depends(get_db), user: DBUser = Depends(get_current_us
 @router.post('/run')
 def inspect_file(file: UploadFile = File(...), db: Session = Depends(get_db), user: DBUser = Depends(get_current_user)):
     content = file.file.read(MAX_UPLOAD_BYTES + 1)
-    if len(content) > MAX_UPLOAD_BYTES: raise HTTPException(413, 'Maximum upload size is 8 MB')
+    if len(content) > MAX_UPLOAD_BYTES: raise HTTPException(413, f'Maximum upload size is {MAX_UPLOAD_BYTES // (1024 * 1024)} MB')
     filename = (file.filename or 'uploaded-file').replace('\\', '/').rsplit('/', 1)[-1][:200]
     digest = hashlib.sha256(content).hexdigest()
     signature = hashlib.md5(content).hexdigest() == EICAR_MD5
