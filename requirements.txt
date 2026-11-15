@@ -1,7 +1,0 @@
-flask
-gunicorn
-requests
-python-nmap
-beautifulsoup4
-colorama
-pytest
