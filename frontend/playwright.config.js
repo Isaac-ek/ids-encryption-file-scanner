@@ -18,7 +18,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: `"${python}" scripts/create_admin.py && "${python}" -m uvicorn api.main:app --host 127.0.0.1 --port 8184`,
+    command: `"${python}" tests/browser_setup.py && "${python}" -m uvicorn api.main:app --host 127.0.0.1 --port 8184`,
     cwd: root,
     url: "http://127.0.0.1:8184/api/health",
     reuseExistingServer: false,

@@ -160,6 +160,14 @@ export default function ModelTab({ model, onInspect }) {
           </p>
         </div>
       </div>
+      {model.live_capture && (
+        <div className="notice" role="note">
+          Live capture is experimental. Flow direction and connection counts are
+          tested, but {model.live_capture.unobserved_features.length} NSL-KDD
+          host/content fields cannot be observed by this network-only sensor.
+          Offline scores do not validate live protection.
+        </div>
+      )}
       {metrics ? (
         <>
           <div className="metrics-grid">

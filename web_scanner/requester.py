@@ -11,6 +11,7 @@ from urllib.parse import urlparse, urljoin, urlencode, urlunparse
 from requests.structures import CaseInsensitiveDict
 
 budget = ContextVar("scan_budget", default=None)
+allowed_hosts = ContextVar("customer_allowed_hosts", default=None)
 
 class TargetDenied(ValueError):
     pass
@@ -20,7 +21,7 @@ def resolve_target(url):
     if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
         raise TargetDenied("Use an http(s) URL without embedded credentials")
     host = parsed.hostname.lower().rstrip('.')
-    allowed = {name.strip().lower().rstrip('.') for name in os.getenv("SCAN_ALLOWED_HOSTS", "").split(',') if name.strip()}
+    allowed = {name.strip().lower().rstrip('.') for name in (allowed_hosts.get() if allowed_hosts.get() is not None else os.getenv("SCAN_ALLOWED_HOSTS", "")).split(',') if name.strip()}
     if host not in allowed:
         raise TargetDenied("Target hostname is not in SCAN_ALLOWED_HOSTS")
     port = parsed.port or (443 if parsed.scheme == "https" else 80)

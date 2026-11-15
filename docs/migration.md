@@ -19,3 +19,5 @@ Existing audit entries retain their format. New scan/prediction/file operations 
 The permanent combined checkout is `Downloads/scanner`. Existing local keys, encrypted files, logs and `.env` remain local. Legacy account YAML files are retained privately under `.runtime/legacy-accounts` and are not imported as active accounts automatically.
 
 The account-management update binds browser tokens to the password state. Existing sessions must sign in again once after upgrading; subsequent password resets revoke prior sessions.
+
+Customer workspace migration adds indexed `workspace_id` columns to the existing records, preserving all existing records as workspace 1. Startup applies the additive migration and invalidates old tokens. See [customer workspaces](customer-workspaces.md) for backups, provisioning, scoped sensor tokens and deployment limits.

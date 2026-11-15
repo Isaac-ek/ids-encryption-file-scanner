@@ -349,3 +349,43 @@ test("mobile navigation exposes every restored screen without horizontal page ov
     fullPage: true,
   });
 });
+
+test("separate customer sessions see only their own workspace files and accounts", async ({
+  page,
+  browser,
+}) => {
+  await login(page);
+  const otherContext = await browser.newContext();
+  const other = await otherContext.newPage();
+  try {
+    await login(other, "other-customer", "isolated-other-password");
+    await expect(other.getByRole("banner")).toContainText(
+      "Other customer workspace",
+    );
+    await navigate(other, "Files");
+    await other.getByLabel("Upload sample file").setInputFiles({
+      name: "other-customer-private.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("private customer sample"),
+    });
+    await expect(other.getByRole("status")).toContainText(
+      "Uploaded other-customer-private.txt",
+    );
+    await expect(
+      other.getByRole("row").filter({ hasText: "other-customer-private.txt" }),
+    ).toBeVisible();
+    await navigate(page, "Files");
+    await expect(
+      page.getByRole("row").filter({ hasText: "other-customer-private.txt" }),
+    ).toHaveCount(0);
+    await navigate(other, "Users");
+    await expect(
+      other.getByRole("cell", { name: "other-customer", exact: true }),
+    ).toBeVisible();
+    await expect(
+      other.getByRole("cell", { name: "browser-owner", exact: true }),
+    ).toHaveCount(0);
+  } finally {
+    await otherContext.close();
+  }
+});

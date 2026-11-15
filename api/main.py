@@ -16,7 +16,8 @@ from api.models import DBUser
 
 @asynccontextmanager
 async def lifespan(app):
-    Base.metadata.create_all(engine)
+    from api.tenancy import initialize_database
+    initialize_database(engine, Base)
     yield
 
 app = FastAPI(title="SecureStream · IDS and Website Security", version="1.0.0", lifespan=lifespan)
@@ -38,14 +39,14 @@ async def alerts_socket(websocket: WebSocket):
         payload = decode_access_token(packet.get("token", ""))
         with SessionLocal() as db:
             valid = payload and db.query(DBUser).filter(DBUser.username == payload.get("sub")).first()
-        if not valid or payload.get("auth_stamp") != session_stamp(valid):
+        if not valid or payload.get("workspace_id") != valid.workspace_id or payload.get("auth_stamp") != session_stamp(valid):
             await websocket.close(code=1008); return
-        manager.active_connections.append(websocket)
+        manager.register(websocket, valid.workspace_id)
         await websocket.send_json({"type":"ready"})
         while True:
             with SessionLocal() as db:
                 account = db.query(DBUser).filter(DBUser.username == payload["sub"]).first()
-                still_active = account is not None and payload.get("auth_stamp") == session_stamp(account)
+                still_active = account is not None and account.workspace_id == payload.get("workspace_id") and payload.get("auth_stamp") == session_stamp(account)
             if not still_active or decode_access_token(packet["token"]) is None:
                 await websocket.close(code=1008); break
             await asyncio.wait_for(websocket.receive_text(), timeout=60)

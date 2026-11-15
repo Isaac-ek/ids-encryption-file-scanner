@@ -11,3 +11,5 @@ The training scripts intentionally remain separate from the web app. Record pack
 Primary references: [scikit-learn: common pitfalls](https://scikit-learn.org/stable/common_pitfalls.html), [XGBoost Python API](https://xgboost.readthedocs.io/en/stable/python/python_api.html).
 
 The preserved bundle was evaluated with Python 3.12, scikit-learn 1.6.1 and XGBoost 3.0.2. On 22,544 NSL-KDD test records, accuracy is 77.78% and macro F1 is 0.5693. R2L recall is 12.89% and U2R recall is 13.43%; improving those classes while controlling false alerts is the priority for a future training comparison. The complete report includes package versions, per-class metrics, confusion matrix, and hashes for the model, scaler, columns and dataset.
+
+The first isolated comparison has now run; its selected candidate failed the rare-class and macro-F1 release gates, so the active bundle remains unchanged. See [detector validation](detector-validation.md) for the reproducible command and full report.

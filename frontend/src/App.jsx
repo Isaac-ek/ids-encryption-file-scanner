@@ -563,7 +563,7 @@ export default function App() {
         <div className="workspace-main">
           <header className="topbar">
             <div className="breadcrumbs">
-              <span>Workspace</span>
+              <span>{user.workspace_name || "Workspace"}</span>
               <span className="breadcrumb-divider">/</span>
               <strong>{current.label}</strong>
             </div>

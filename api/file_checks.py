@@ -13,6 +13,7 @@ from api.auth import get_current_user, DBUser
 from api.audit import log_audit
 from api.database import get_db
 from api.models import DBFileCheck
+from api.tenancy import storage_root
 from api.settings import DATA_ROOT, MAX_UPLOAD_BYTES
 
 router = APIRouter(prefix='/api/file-checks', tags=['File inspection'])
@@ -49,7 +50,7 @@ def inspect_file(file: UploadFile = File(...), db: Session = Depends(get_db), us
     ]
     executable = shutil.which('clamscan'); av_status = 'unavailable'
     if executable:
-        scans = DATA_ROOT / 'file-check-temp'; scans.mkdir(parents=True, exist_ok=True, mode=0o700)
+        scans = storage_root(user.workspace_id) / 'file-check-temp'; scans.mkdir(parents=True, exist_ok=True, mode=0o700)
         with tempfile.TemporaryDirectory(dir=scans) as directory:
             path = Path(directory) / 'upload.bin'; path.write_bytes(content); path.chmod(0o600)
             try:

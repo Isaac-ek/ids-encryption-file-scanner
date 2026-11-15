@@ -31,12 +31,13 @@ def metadata():
             evaluation = json.loads(report.read_text())
             if evaluation.get("bundle_sha256") == hashes:
                 result["evaluation"] = evaluation
+        from api.flow_features import UNOBSERVED
+        result["live_capture"] = {"status": "experimental", "schema": "bidirectional-flow-v1", "unobserved_features": UNOBSERVED, "note": "Network-only flow extraction does not observe NSL-KDD host/content fields. Live predictions are not validated protection."}
         return result
     except Exception as error:
         return {"available": False, "model_type": None, "detail": "Detector bundle is unavailable or incompatible", "error_type": type(error).__name__}
 
-def predict(features):
-    model, scaler, columns = bundle()
+def encode_features(features, columns):
     frame = pd.DataFrame([features])
     for column in CATEGORICAL:
         if column not in frame:
@@ -54,6 +55,10 @@ def predict(features):
     values = full.to_numpy(dtype=np.float32)
     if not np.isfinite(values).all():
         raise ValueError("Features must be finite numeric values")
-    transformed = scaler.transform(values)
+    return values
+
+def predict(features):
+    model, scaler, columns = bundle()
+    transformed = scaler.transform(encode_features(features, columns))
     prediction = int(model.predict(transformed)[0])
     return {"label": LABELS[prediction], "class_id": prediction, "model_type": type(model).__name__, "feature_count": len(columns)}

@@ -1,11 +1,14 @@
 from sqlalchemy import Column, Integer, String, Boolean
+
+class WorkspaceScoped:
+    workspace_id = Column(Integer, nullable=False, default=1, index=True)
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Dict, Any, Literal
 from api.database import Base
 
 # ==================== SQLAlchemy Database Models ====================
 
-class DBUser(Base):
+class DBUser(WorkspaceScoped, Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -14,7 +17,7 @@ class DBUser(Base):
     password = Column(String, nullable=False)
     role = Column(String, default="user")
 
-class DBRule(Base):
+class DBRule(WorkspaceScoped, Base):
     __tablename__ = "rules"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -24,7 +27,7 @@ class DBRule(Base):
     threshold = Column(Integer, nullable=True)
     enabled = Column(Boolean, default=True)
 
-class DBAuditLog(Base):
+class DBAuditLog(WorkspaceScoped, Base):
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -36,7 +39,7 @@ class DBAuditLog(Base):
     prev_hash = Column(String, nullable=False)
     entry_hash = Column(String, nullable=False)
 
-class DBThreatAlert(Base):
+class DBThreatAlert(WorkspaceScoped, Base):
     __tablename__ = "threat_alerts"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -63,10 +66,12 @@ class UserEdit(BaseModel):
 
 class UserResponse(UserBase):
     id: int
+    workspace_id: int
+    workspace_name: str = ""
 
     model_config = ConfigDict(from_attributes=True)
 
-class DBScanRun(Base):
+class DBScanRun(WorkspaceScoped, Base):
     __tablename__ = "scan_runs"
     id = Column(Integer, primary_key=True)
     target = Column(String, nullable=False)
@@ -110,7 +115,7 @@ class ThreatAlertResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class DBFileCheck(Base):
+class DBFileCheck(WorkspaceScoped, Base):
     __tablename__ = "file_checks"
     id = Column(Integer, primary_key=True)
     filename = Column(String, nullable=False)
@@ -119,3 +124,12 @@ class DBFileCheck(Base):
     requested_by = Column(String, nullable=False)
     created_at = Column(String, nullable=False)
     report_json = Column(String, nullable=False)
+
+
+class DBWorkspace(Base):
+    __tablename__ = "workspaces"
+    id = Column(Integer, primary_key=True)
+    slug = Column(String, unique=True, nullable=False)
+    name = Column(String, nullable=False)
+    worker_token_hash = Column(String, nullable=True)
+    scan_allowed_hosts = Column(String, nullable=False, default="")

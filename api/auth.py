@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from api.database import get_db
-from api.models import DBUser, UserCreate, UserEdit, UserResponse
+from api.models import DBUser, DBWorkspace, UserCreate, UserEdit, UserResponse
+from api import tenancy  # Register mandatory workspace query/write guards.
 from pydantic import BaseModel, Field
 from api.audit import log_audit
 
@@ -98,8 +99,13 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
         )
-    if not hmac.compare_digest(payload.get("auth_stamp", ""), session_stamp(user)):
+    if payload.get("workspace_id") != user.workspace_id or not hmac.compare_digest(payload.get("auth_stamp", ""), session_stamp(user)):
         raise HTTPException(401, "Your session has changed. Please sign in again.")
+    db.info["workspace_id"] = user.workspace_id
+    workspace = db.query(DBWorkspace).filter(DBWorkspace.id == user.workspace_id).first()
+    if workspace is None:
+        raise HTTPException(401, "Workspace unavailable")
+    user.workspace_name = workspace.name
     return user
 
 def require_admin(current_user: DBUser = Depends(get_current_user)) -> DBUser:
@@ -124,7 +130,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             detail="Incorrect username or password"
         )
 
-    access_token = create_access_token(data={"sub": user.username, "auth_stamp": session_stamp(user)})
+    access_token = create_access_token(data={"sub": user.username, "auth_stamp": session_stamp(user), "workspace_id": user.workspace_id})
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -147,7 +153,7 @@ def list_users(db: Session = Depends(get_db), current_user: DBUser = Depends(req
 
 @router.post("/users", response_model=UserResponse)
 def create_user(user_in: UserCreate, db: Session = Depends(get_db), current_user: DBUser = Depends(require_admin)):
-    existing = db.query(DBUser).filter(DBUser.username == user_in.username).first()
+    existing = db.query(DBUser).execution_options(identity_lookup=True).filter(DBUser.username == user_in.username).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -222,4 +228,4 @@ def change_password(payload: PasswordChange, db: Session = Depends(get_db), user
     user.password = generate_password_hash(payload.new_password)
     db.commit()
     log_audit(db, user.username, "change_password", user.username)
-    return {"message": "Password changed. Other sessions will need to sign in again.", "access_token": create_access_token({"sub": user.username, "auth_stamp": session_stamp(user)})}
+    return {"message": "Password changed. Other sessions will need to sign in again.", "access_token": create_access_token({"sub": user.username, "auth_stamp": session_stamp(user), "workspace_id": user.workspace_id})}
