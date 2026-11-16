@@ -4,6 +4,7 @@ from urllib.parse import urljoin, urlparse
 import ssl
 import socket
 import shutil
+import re
 from datetime import datetime
 import nmap
 from bs4 import BeautifulSoup
@@ -12,19 +13,31 @@ from .requester import fetch
 from .reporter import Reporter
 
 
-REQUIRED_HEADERS = [
-    "Content-Security-Policy",
-    "Content-Security-Policy-Report-Only",
-    "X-Frame-Options",
-    "Strict-Transport-Security",
-]
-
 ADDITIONAL_SECURITY_HEADERS = [
     "X-Content-Type-Options",
     "Referrer-Policy",
     "Permissions-Policy",
-    "Expect-CT",
 ]
+
+
+def _restricted_frame_ancestors(policy: str) -> bool:
+    """Recognize parent allowlists, without claiming full CSP validation.
+
+    Enforced policies intersect. Within one policy, the first duplicate
+    directive wins. Report-only policies are deliberately never passed here.
+    """
+    host_source = re.compile(r"^(?:https?://)?(?:\*\.)?(?:[a-z0-9-]+\.)*[a-z0-9-]+(?::(?:[0-9]+|\*))?(?:/[^\s]*)?$", re.I)
+    for item in policy.split(","):
+        for directive in item.split(";"):
+            tokens = directive.strip().split()
+            if not tokens or tokens[0].lower() != "frame-ancestors":
+                continue
+            sources = tokens[1:]
+            if sources and all(source.lower() in {"'none'", "'self'"} or host_source.fullmatch(source) for source in sources):
+                return True
+            break
+    return False
+
 
 PORTS = "21,22,23,25,80,443,3306,3389,8080"
 COMMON_PATHS = [
@@ -49,11 +62,33 @@ def analyze_headers(url: str, reporter: Reporter | None = None) -> None:
         return
 
     headers = resp.headers
-    for hdr in REQUIRED_HEADERS:
-        if hdr not in headers:
-            reporter.warn(f"Missing header: {hdr}")
+    is_document = not headers.get("Content-Type") or any(kind in headers.get("Content-Type", "").lower() for kind in ("text/html", "application/xhtml+xml"))
+    if resp.status_code >= 400:
+        reporter.info(f"HTTP {resp.status_code}: these observations describe the error response, not necessarily the application document.")
+    if is_document:
+        policy = headers.get("Content-Security-Policy", "")
+        if policy:
+            reporter.info("Found enforced Content-Security-Policy; directive effectiveness requires review.")
         else:
-            reporter.info(f"Found header: {hdr}")
+            reporter.warn("Missing enforced Content-Security-Policy on the HTML response.")
+        if headers.get("Content-Security-Policy-Report-Only"):
+            reporter.info("CSP Report-Only is present for monitoring; it does not enforce a policy.")
+        if _restricted_frame_ancestors(policy):
+            reporter.info("Framing is restricted by an enforced CSP frame-ancestors allowlist.")
+        elif headers.get("X-Frame-Options", "").strip().upper() in {"DENY", "SAMEORIGIN"}:
+            reporter.info("Framing is restricted by X-Frame-Options.")
+        else:
+            reporter.warn("No restricted enforced CSP frame-ancestors allowlist or valid X-Frame-Options found; review whether this page should allow embedding.")
+    else:
+        reporter.info("Document CSP and framing checks skipped for this non-HTML response.")
+
+    if urlparse(resp.url).scheme == "https":
+        if headers.get("Strict-Transport-Security"):
+            reporter.info("Found header: Strict-Transport-Security")
+        else:
+            reporter.warn("Missing Strict-Transport-Security on the HTTPS response.")
+    else:
+        reporter.info("HSTS is only honored over HTTPS; it is not evaluated on this HTTP response.")
 
     for hdr in ADDITIONAL_SECURITY_HEADERS:
         if hdr not in headers:
@@ -94,7 +129,7 @@ def check_cors(url: str, reporter: Reporter | None = None) -> None:
     if origin:
         reporter.info(f"Access-Control-Allow-Origin: {origin}")
         if origin.strip() == "*" and creds and creds.lower() == "true":
-            reporter.warn("CORS policy allows credentials with wildcard origin (*).")
+            reporter.warn("Wildcard CORS origin with credentials is rejected by browsers; review the intended cross-origin access configuration.")
     else:
         reporter.info("No Access-Control-Allow-Origin header detected.")
 
@@ -105,8 +140,6 @@ def check_open_redirect(url: str, reporter: Reporter | None = None) -> None:
     base = f"{parsed.scheme}://{parsed.netloc}"
     target = "https://example.com/"
     params = ["next", "redirect", "url", "dest", "return"]
-
-    reporter.info(f"Checking for open redirect patterns on {parsed.netloc}")
 
     for p in params:
         try:

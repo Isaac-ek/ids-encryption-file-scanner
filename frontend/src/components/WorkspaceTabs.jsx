@@ -424,26 +424,80 @@ export function WebsiteTab({
             </p>
           )}
           <p className="footnote">
-            Findings are observations to investigate. Approve each hostname below, including any hostname a site redirects to.
+            Findings are observations to investigate. Approve each hostname
+            below, including any hostname a site redirects to.
           </p>
-          <details className="advanced-options" open={!scope?.effective_hostnames?.length}>
-            <summary>Approved websites <span className="count">{scope?.effective_hostnames?.length || 0}</span></summary>
+          <details
+            className="advanced-options"
+            open={!scope?.effective_hostnames?.length}
+          >
+            <summary>
+              Approved websites{" "}
+              <span className="count">
+                {scope?.effective_hostnames?.length || 0}
+              </span>
+            </summary>
             <div className="advanced-body">
-              <p className="muted text-small">Add sites you own or have permission to assess. Approval covers the exact hostname; subdomains are separate.</p>
-              {scope?.effective_hostnames?.length ? <ul>{scope.effective_hostnames.map((host) => <li key={host} className="mono">{host}</li>)}</ul> : <p className="inline-note">Approve a website here before your first check.</p>}
-              {canManage && <form key={scope?.hostnames?.join(",") || "empty"} onSubmit={(event) => {
-                event.preventDefault();
-                const fields = new FormData(event.currentTarget);
-                run(async () => {
-                  await api("/scans/scope", {method: "PUT", json: {hostnames: String(fields.get("hostnames") || "").split(/[\s,]+/).filter(Boolean), authorized: fields.has("scope_authorized")}});
-                  await refresh();
-                  notify("Approved websites updated.");
-                });
-              }}>
-                <label>Website URLs or hostnames<textarea name="hostnames" rows={3} defaultValue={scope?.hostnames?.join("\n") || ""} placeholder="your-domain.com&#10;www.your-domain.com" maxLength={8000} /></label>
-                <label className="check-label"><input name="scope_authorized" type="checkbox" required />I own or have permission to assess these sites</label>
-                <button className="button secondary" disabled={busy || !scope}>Save approved websites</button>
-              </form>}
+              <p className="muted text-small">
+                Add sites you own or have permission to assess. Approval covers
+                the exact hostname; subdomains are separate.
+              </p>
+              {scope?.effective_hostnames?.length ? (
+                <ul>
+                  {scope.effective_hostnames.map((host) => (
+                    <li key={host} className="mono">
+                      {host}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="inline-note">
+                  Approve a website here before your first check.
+                </p>
+              )}
+              {canManage && (
+                <form
+                  key={scope?.hostnames?.join(",") || "empty"}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const fields = new FormData(event.currentTarget);
+                    run(async () => {
+                      await api("/scans/scope", {
+                        method: "PUT",
+                        json: {
+                          hostnames: String(fields.get("hostnames") || "")
+                            .split(/[\s,]+/)
+                            .filter(Boolean),
+                          authorized: fields.has("scope_authorized"),
+                        },
+                      });
+                      await refresh();
+                      notify("Approved websites updated.");
+                    });
+                  }}
+                >
+                  <label>
+                    Website URLs or hostnames
+                    <textarea
+                      name="hostnames"
+                      rows={3}
+                      defaultValue={scope?.hostnames?.join("\n") || ""}
+                      placeholder="your-domain.com&#10;www.your-domain.com"
+                      maxLength={8000}
+                    />
+                  </label>
+                  <label className="check-label">
+                    <input name="scope_authorized" type="checkbox" required />I
+                    own or have permission to assess these sites
+                  </label>
+                  <button
+                    className="button secondary"
+                    disabled={busy || !scope}
+                  >
+                    Save approved websites
+                  </button>
+                </form>
+              )}
             </div>
           </details>
         </section>
@@ -493,6 +547,11 @@ export function WebsiteTab({
               </div>
               <Badge>{label(current.status)}</Badge>
             </div>
+            <p className="footnote padded">
+              Completed means the checks finished. Review items need
+              investigation; Info entries provide context. Saved reports are
+              snapshots—run a new check after a site changes.
+            </p>
             <div className="finding-list">
               {current.findings.map((finding, index) => (
                 <div className="finding" key={index}>
@@ -574,7 +633,11 @@ export function FileChecksTab({
                 onChange={(event) => setFile(event.target.files[0])}
               />
               <span className="field-help">
-                Up to {status?.max_upload_bytes ? `${status.max_upload_bytes / (1024 * 1024)} MB` : "the host limit"}. The temporary file is discarded after inspection.
+                Up to{" "}
+                {status?.max_upload_bytes
+                  ? `${status.max_upload_bytes / (1024 * 1024)} MB`
+                  : "the host limit"}
+                . The temporary file is discarded after inspection.
               </span>
             </label>
             <button className="button primary" disabled={busy || !file}>
